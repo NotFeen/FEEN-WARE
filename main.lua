@@ -2,13 +2,15 @@ local localPlayer = game.Players.LocalPlayer
 local playerGUI = localPlayer:WaitForChild("PlayerGui")
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local Players = game:GetService("Players")
 
 -- Configuration
 local tracked = {}
 local toggles = {
 	["Bee"] = false,
 	["Metal"] = false,
-	["Star"] = false
+	["Star"] = false,
+	["Player"] = false -- New Toggle
 }
 local connections = {}
 
@@ -109,6 +111,8 @@ local function getESPConfig(obj)
 		return Color3.fromRGB(255, 165, 0), "Crit Star"
 	elseif obj.Name == "VitalityStar" then
 		return Color3.fromRGB(50, 255, 50), "Vitality Star"
+	elseif Players:GetPlayerFromCharacter(obj) then
+		return Color3.fromRGB(255, 255, 255), obj:FindFirstChild("Humanoid") and Players:GetPlayerFromCharacter(obj).DisplayName or "Player"
 	end
 	return nil
 end
@@ -122,11 +126,11 @@ local function removeESP(obj)
 end
 
 local function createESP(obj)
-	if tracked[obj] then return end
+	if tracked[obj] or obj == localPlayer.Character then return end
 	local color, labelName = getESPConfig(obj)
 	if not color then return end
 
-	local part = obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+	local part = obj:FindFirstChild("HumanoidRootPart") or obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
 	if not part then return end
 
 	local box = Instance.new("SelectionBox")
@@ -137,9 +141,9 @@ local function createESP(obj)
 	box.Parent = part
 
 	local bill = Instance.new("BillboardGui")
-	bill.Size = UDim2.fromOffset(120, 50)
+	bill.Size = UDim2.fromOffset(150, 50)
 	bill.AlwaysOnTop = true
-	bill.StudsOffset = Vector3.new(0, 3, 0)
+	bill.StudsOffset = Vector3.new(0, 4, 0) -- Slightly higher for players
 	bill.Adornee = part
 	bill.Parent = part
 	
@@ -170,24 +174,26 @@ end))
 
 local function refreshCategory(cat, state)
 	if state then
-		for _, v in pairs(workspace:GetDescendants()) do
-			local _, typeName = getESPConfig(v)
-			if typeName and typeName:find(cat) then createESP(v) end
+		if cat == "Player" then
+			for _, p in pairs(Players:GetPlayers()) do
+				if p.Character then createESP(p.Character) end
+			end
+		else
+			for _, v in pairs(workspace:GetDescendants()) do
+				local _, typeName = getESPConfig(v)
+				if typeName and typeName:find(cat) then createESP(v) end
+			end
 		end
 	else
 		for obj, data in pairs(tracked) do
-			if data.name:find(cat) then removeESP(obj) end
+			if cat == "Player" then
+				if Players:GetPlayerFromCharacter(obj) then removeESP(obj) end
+			elseif data.name:find(cat) then 
+				removeESP(obj) 
+			end
 		end
 	end
 end
-
---- AUTO REFRESH ON RESPAWN ---
-table.insert(connections, localPlayer.CharacterAdded:Connect(function()
-	task.wait(1) -- Wait for world to load
-	for cat, state in pairs(toggles) do
-		if state then refreshCategory(cat, true) end
-	end
-end))
 
 --- BUTTONS ---
 local function makeBtn(text, parent)
@@ -203,7 +209,7 @@ local function makeBtn(text, parent)
 	return b
 end
 
-local cats = {"Bee", "Metal", "Star"}
+local cats = {"Bee", "Metal", "Star", "Player"}
 for _, name in pairs(cats) do
 	local btn = makeBtn(name:upper() .. " ESP [OFF]", scrollingFrame)
 	btn.Activated:Connect(function()
@@ -226,13 +232,25 @@ uninjectBtn.Activated:Connect(function()
 	fallenWareScreenUI:Destroy()
 end)
 
--- Listener for live spawns
+-- Listeners for Player Join/Leave and Respawn
+table.insert(connections, Players.PlayerAdded:Connect(function(p)
+	p.CharacterAdded:Connect(function(char)
+		if toggles["Player"] then 
+			task.wait(0.5)
+			createESP(char) 
+		end
+	end)
+end))
+
+-- Workspace listener for other items
 table.insert(connections, workspace.DescendantAdded:Connect(function(obj)
 	task.wait(0.5)
 	local _, typeName = getESPConfig(obj)
 	if typeName then
 		for cat, active in pairs(toggles) do
-			if active and typeName:find(cat) then createESP(obj) end
+			if active and typeName:find(cat) and cat ~= "Player" then 
+				createESP(obj) 
+			end
 		end
 	end
 end))
