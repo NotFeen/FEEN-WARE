@@ -17,7 +17,7 @@ local connections = {}
 -- UI Setup
 local fallenWareScreenUI = Instance.new("ScreenGui")
 fallenWareScreenUI.Parent = playerGUI
-fallenWareScreenUI.Name = "FallenWare"
+fallenWareScreenUI.Name = "UZIWARE + ZENWARE"
 fallenWareScreenUI.IgnoreGuiInset = true
 fallenWareScreenUI.ResetOnSpawn = false 
 
@@ -50,7 +50,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Parent = titleFrame
 titleText.Size = UDim2.new(1, 0, 1, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "ZEN AND UZI WARE"
+titleText.Text = "FALLENWARE"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.TextScaled = true
 titleText.Font = Enum.Font.Code
