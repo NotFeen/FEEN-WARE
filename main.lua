@@ -17,7 +17,7 @@ local connections = {}
 -- UI Setup
 local fallenWareScreenUI = Instance.new("ScreenGui")
 fallenWareScreenUI.Parent = playerGUI
-fallenWareScreenUI.Name = "FallenWare"
+fallenWareScreenUI.Name = "ZENWARE"
 fallenWareScreenUI.IgnoreGuiInset = true
 fallenWareScreenUI.ResetOnSpawn = false 
 
