@@ -10,14 +10,14 @@ local toggles = {
 	["Bee"] = false,
 	["Metal"] = false,
 	["Star"] = false,
-	["Box"] = false -- New Toggle
+	["Box"] = false 
 }
 local connections = {}
 
 -- UI Setup
 local fallenWareScreenUI = Instance.new("ScreenGui")
 fallenWareScreenUI.Parent = playerGUI
-fallenWareScreenUI.Name = "ZENWARE"
+fallenWareScreenUI.Name = "FallenWare"
 fallenWareScreenUI.IgnoreGuiInset = true
 fallenWareScreenUI.ResetOnSpawn = false 
 
@@ -27,7 +27,7 @@ local function addUICorner(quantity, parent)
 	UICorner.Parent = parent
 end
 
--- Main Frame (Slightly taller to fit the new button)
+-- Main Frame
 local mainUI = Instance.new("Frame")
 mainUI.Parent = fallenWareScreenUI
 mainUI.Size = UDim2.new(0.13, 0, 0.55, 0) 
@@ -50,7 +50,7 @@ local titleText = Instance.new("TextLabel")
 titleText.Parent = titleFrame
 titleText.Size = UDim2.new(1, 0, 1, 0)
 titleText.BackgroundTransparency = 1
-titleText.Text = "FALLENWARE"
+titleText.Text = "ZENWARE"
 titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleText.TextScaled = true
 titleText.Font = Enum.Font.Code
@@ -113,7 +113,6 @@ end
 local function removeESP(obj)
 	if tracked[obj] then
 		if tracked[obj].gui then tracked[obj].gui:Destroy() end
-		if tracked[obj].box then tracked[obj].box:Destroy() end
 		tracked[obj] = nil
 	end
 end
@@ -121,12 +120,12 @@ end
 local function createESP(obj, isPlayer)
 	if tracked[obj] then return end
 	
-	local targetPart = obj:IsA("BasePart") and obj or obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+	local targetPart = obj:FindFirstChild("HumanoidRootPart") or (obj:IsA("BasePart") and obj) or obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
 	if not targetPart then return end
 
 	local color, labelName
 	if isPlayer then
-		color = Color3.fromHSV(tick() % 5 / 5, 1, 1) -- Initial Rainbow
+		color = Color3.fromHSV(tick() % 5 / 5, 1, 1)
 		labelName = obj.Name
 	else
 		color, labelName = getESPConfig(obj)
@@ -134,32 +133,47 @@ local function createESP(obj, isPlayer)
 	
 	if not color and not isPlayer then return end
 
-	local box = Instance.new("SelectionBox")
-	box.Adornee = targetPart
-	box.Color3 = color
-	box.LineThickness = 0.04
-	box.Transparency = 0.5
-	box.Parent = targetPart
-
-	local bill, label
-	if not isPlayer then -- Only show text/distance for items, not Box ESP players (as requested)
-		bill = Instance.new("BillboardGui")
-		bill.Size = UDim2.fromOffset(120, 50)
-		bill.AlwaysOnTop = true
-		bill.StudsOffset = Vector3.new(0, 3, 0)
-		bill.Adornee = targetPart
-		bill.Parent = targetPart
+	-- BILLBOARD GUI FOR BOX AND TEXT
+	local bill = Instance.new("BillboardGui")
+	bill.AlwaysOnTop = true
+	bill.Adornee = targetPart
+	bill.Parent = targetPart
+	
+	local boxFrame
+	if isPlayer then
+		-- LARGE GUI BOX FOR PLAYERS
+		bill.Size = UDim2.fromScale(6, 8) -- Made it much bigger
+		boxFrame = Instance.new("Frame")
+		boxFrame.Parent = bill
+		boxFrame.Size = UDim2.fromScale(1, 1)
+		boxFrame.BackgroundTransparency = 1
+		boxFrame.BorderSizePixel = 3
+		boxFrame.BorderMode = Enum.BorderMode.Inset
+		boxFrame.BorderColor3 = color
 		
-		label = Instance.new("TextLabel", bill)
+		-- Simple UI Stroke for the thickness
+		local stroke = Instance.new("UIStroke")
+		stroke.Thickness = 2
+		stroke.Color = color
+		stroke.Parent = boxFrame
+	else
+		-- STANDARD TEXT ESP FOR ITEMS
+		bill.Size = UDim2.fromOffset(120, 50)
+		bill.StudsOffset = Vector3.new(0, 3, 0)
+		
+		local label = Instance.new("TextLabel", bill)
 		label.Size = UDim2.fromScale(1, 1)
 		label.BackgroundTransparency = 1
 		label.TextColor3 = color
 		label.TextStrokeTransparency = 0
 		label.TextSize = 16
 		label.Font = Enum.Font.GothamBold
+		
+		tracked[obj] = {gui = bill, text = label, part = targetPart, name = labelName, isPlayer = false}
+		return
 	end
 	
-	tracked[obj] = {gui = bill, text = label, part = targetPart, box = box, name = labelName, isPlayer = isPlayer}
+	tracked[obj] = {gui = bill, box = boxFrame, part = targetPart, name = labelName, isPlayer = true}
 end
 
 -- HEARTBEAT
@@ -171,10 +185,12 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
 	for obj, data in pairs(tracked) do
 		if obj and obj.Parent and data.part then
 			if data.isPlayer then
-				data.box.Color3 = rainbow
+				data.box.UIStroke.Color = rainbow
 			else
-				local dist = math.floor((hrp.Position - data.part.Position).Magnitude)
-				data.text.Text = data.name .. "\n[" .. dist .. "m]"
+				if hrp then
+					local dist = math.floor((hrp.Position - data.part.Position).Magnitude)
+					data.text.Text = data.name .. "\n[" .. dist .. "m]"
+				end
 			end
 		else
 			removeESP(obj)
