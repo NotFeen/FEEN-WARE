@@ -10,7 +10,9 @@ if not allowedIds[game.Players.LocalPlayer.UserId] then
     return
 end
 -- Your GUI code goes here
-print("Access Granted!")
+print("Access Granted asdasdd !")
+-- FEENWARE ULTIMATE
+
 -- FEENWARE ULTIMATE
 local localPlayer = game.Players.LocalPlayer
 local playerGUI = localPlayer:WaitForChild("PlayerGui")
@@ -314,7 +316,7 @@ local function handleStaffScan()
 end
 
 -- ==========================================
--- KA LOGIC (DYNAMIC RIG WALLCHECK + UNRESTRICTED REACH)
+-- KA LOGIC (WEAPON DETECTION FIX + DYNAMIC RIG WALLCHECK + UNRESTRICTED REACH)
 -- ==========================================
 local SwordHit = ReplicatedStorage.rbxts_include.node_modules:FindFirstChild("@rbxts").net.out._NetManaged.SwordHit
 local cachedTargets = {}
@@ -325,18 +327,17 @@ local function isTargetVisible(startPos, targetModel, ignoreList)
 	params.FilterDescendantsInstances = ignoreList
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	
-	-- Dynamically loops through ALL parts of the model (Fixes Diamond Guardian / Custom NPCs)
 	for _, part in ipairs(targetModel:GetChildren()) do
 		if part:IsA("BasePart") then
 			local dir = part.Position - startPos
 			local hit = workspace:Raycast(startPos, dir, params)
 			if not hit then
-				return true -- Found a visible part!
+				return true 
 			end
 		end
 	end
 	
-	return false -- Entire body is fully behind a wall
+	return false 
 end
 
 -- Anti-Lag Target Cacher
@@ -373,7 +374,7 @@ task.spawn(function()
 			local closestNPCDist = math.huge
 			
 			local range = toggles.KARange or 25
-			local maxAngle = (toggles.KAAngle or 360) / 2 -- Divide by 2 for left/right spread
+			local maxAngle = (toggles.KAAngle or 360) / 2 
 			
 			for _, model in ipairs(cachedTargets) do
 				local targetHRP = model:FindFirstChild("HumanoidRootPart")
@@ -388,7 +389,7 @@ task.spawn(function()
 						
 						if angleToTarget <= maxAngle then
 							
-							-- Multi-Point Wall Check (Casts from your character)
+							-- Multi-Point Wall Check 
 							local isBlocked = false
 							if toggles.KAWallCheck then
 								isBlocked = not isTargetVisible(hrp.Position, model, {character, model})
@@ -433,13 +434,33 @@ task.spawn(function()
 			-- Execute Attack
 			if targetEnemy then
 				local weaponList = ReplicatedStorage:FindFirstChild("Inventories") and ReplicatedStorage.Inventories:FindFirstChild(localPlayer.Name)
-				local weapon = weaponList and weaponList:FindFirstChild("wood_sword")
+				local weapon = nil
 
-				if not weapon and weaponList then
-					for _, w in ipairs(weaponList:GetChildren()) do
-						if w.Name:find("sword") or w.Name:find("blade") or w.Name:find("dao") or w.Name:find("scythe") then 
-							weapon = w 
-							break 
+				if weaponList then
+					-- Priority Array: Ensures it equips your strongest sword first
+					local priorityWeapons = {
+						"emerald_sword", "diamond_sword", "iron_sword", "stone_sword", "wood_sword", 
+						"rageblade", "emerald_dao", "diamond_dao", "iron_dao", "stone_dao", "wood_dao",
+						"emerald_scythe", "diamond_scythe", "iron_scythe", "stone_scythe", "wood_scythe",
+						"emerald_dagger", "diamond_dagger", "iron_dagger", "stone_dagger", "wood_dagger"
+					}
+					
+					for _, sName in ipairs(priorityWeapons) do
+						local w = weaponList:FindFirstChild(sName)
+						if w then
+							weapon = w
+							break
+						end
+					end
+					
+					-- Absolute Fallback: Sweeps inventory for anything weapon-like regardless of capitalization
+					if not weapon then
+						for _, w in ipairs(weaponList:GetChildren()) do
+							local n = w.Name:lower()
+							if n:find("sword") or n:find("blade") or n:find("dao") or n:find("scythe") or n:find("dagger") or n:find("hammer") or n:find("glove") then 
+								weapon = w 
+								break 
+							end
 						end
 					end
 				end
@@ -450,7 +471,6 @@ task.spawn(function()
 						local direction = (targetHRP.Position - hrp.Position).Unit
 						
 						-- AGGRESSIVE SPOOFING ALGORITHM
-						-- Locks your spoofed positional hit exactly 3.5 studs away from the target.
 						local fakePos = targetHRP.Position - (direction * 3.5)
 						
 						local args = {
