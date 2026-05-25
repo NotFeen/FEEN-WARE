@@ -1,1 +1,506 @@
 
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local toggled = false
+local textFont = "Zekton"
+local dictionary = {
+	"Combat",
+	"Visuals",
+	"Utility",
+	"Movement",
+	"Game"
+}
+
+local combatButtons = {
+	"Killaura",
+	"Aim Assist",
+	"Auto Clicker",
+    "Velocity"	
+}
+local TweenService = game:GetService("TweenService")
+local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local transparencyTweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+
+local function makeDraggable(frame, smoothingFactor)
+	smoothingFactor = smoothingFactor or 0.15
+
+	frame.Active = true
+
+	local isDragging = false
+	local dragStart = nil
+	local startPos = nil
+	local targetPosition = frame.Position
+
+	frame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isDragging = true
+			dragStart = input.Position
+			startPos = frame.Position
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			isDragging = false
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			local delta = input.Position - dragStart
+			targetPosition = UDim2.new(
+				startPos.X.Scale, 
+				startPos.X.Offset + delta.X, 
+				startPos.Y.Scale, 
+				startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		if not frame.Parent then
+			connection:Disconnect()
+			return
+		end
+
+		frame.Position = frame.Position:Lerp(targetPosition, smoothingFactor)
+	end)
+end
+
+local oldGui = PlayerGui:FindFirstChild("FeatherWare")
+if oldGui then
+	print("Old version detected, deleting.")
+	oldGui:Destroy()
+	print("Done!")
+end
+
+local mainScreenUI = Instance.new("ScreenGui")
+mainScreenUI.Parent = PlayerGui
+mainScreenUI.Name = "FeatherWare"
+
+local function uiCorner(instance, amount)
+	local UiCorner = Instance.new("UICorner")
+	UiCorner.Parent = instance
+	UiCorner.CornerRadius = UDim.new(0, amount)
+end
+
+local templateButton = Instance.new("TextButton")
+templateButton.Parent = mainScreenUI
+templateButton.Name = "templateButton"
+templateButton.FontFace = Font.fromName(textFont)
+templateButton.TextScaled = true
+templateButton.TextColor3 = Color3.new(1, 1, 1)
+templateButton.BackgroundTransparency = 1
+templateButton.BorderSizePixel = 0
+templateButton.BackgroundColor3 = Color3.new(0.152941, 0.15294, 0.152941)
+
+local function applyTransparencyEffect(guiObject)
+	local hoverTween = TweenService:Create(guiObject, transparencyTweenInfo, {BackgroundTransparency = 0})
+	local leaveTween = TweenService:Create(guiObject, transparencyTweenInfo, {BackgroundTransparency = 1})
+
+	local isHovering = false
+
+	guiObject.MouseMoved:Connect(function()
+		if not isHovering then
+			isHovering = true
+			leaveTween:Cancel()
+			hoverTween:Play()
+		end
+	end)
+
+	guiObject.MouseLeave:Connect(function()
+		if isHovering then
+			isHovering = false
+			hoverTween:Cancel()
+			leaveTween:Play()
+		end
+	end)
+end
+
+
+local function createCombatButtons(Section)
+	for place, button in ipairs(combatButtons) do
+		local buttonClone = templateButton:Clone()
+		buttonClone.Parent = mainScreenUI:FindFirstChild(Section):FindFirstChild("scrollingFrame")
+		buttonClone.Text = button
+		buttonClone.TextScaled = false
+		buttonClone.TextSize = 25
+		buttonClone.Name = button
+		buttonClone.Size = UDim2.new(1,0,0.04,0)
+		buttonClone.TextXAlignment = Enum.TextXAlignment.Left
+		
+		buttonClone.LayoutOrder = place
+		buttonClone.openArrow.Text = "<b>⋮</b>"
+		
+		
+		applyTransparencyEffect(buttonClone)
+
+		local uiPadding = Instance.new("UIPadding")
+		uiPadding.Parent = buttonClone
+		uiPadding.PaddingLeft = UDim.new(0.1,0)
+	end
+end
+
+local function createVisualsButtons(Section)
+	
+end
+
+local function createUtilityButtons(Section)
+	
+end
+
+local function createMovementButtons(Section)
+	
+end
+
+local function createGameButtons(Section)
+	
+end
+
+
+local function createButtons(Section)
+	if Section == "Combat" then
+		createCombatButtons(Section)
+	elseif Section == "Visuals" then
+		createVisualsButtons(Section)
+	elseif Section == "Utility" then
+		createUtilityButtons(Section)
+	elseif Section == "Movement" then
+		createMovementButtons(Section)
+	elseif Section  == "Game" then
+		createGameButtons(Section)
+	end
+end
+
+
+local function createFrame(frameType)
+	local frame = Instance.new("Frame")
+	frame.Parent = mainScreenUI
+	frame.Name = frameType
+	frame.Size = UDim2.new(0.115, 0,0.5, 0)
+	frame.Position = UDim2.new(0.1, 0, 0.1, 0)
+	frame.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+	frame.BorderSizePixel = 0
+	
+	frame.Visible = false
+
+	local glow = Instance.new("ImageLabel")
+	glow.Parent = frame
+
+	glow.Name = "Glow"
+	glow.BackgroundTransparency = 1
+
+	glow.Image = "rbxassetid://1316045217"
+
+	glow.ImageColor3 = Color3.new(0,0,0)
+
+	glow.ImageTransparency = 0.4
+
+	glow.ScaleType = Enum.ScaleType.Slice
+	glow.SliceCenter = Rect.new(10,10,118,118)
+
+	glow.Size = UDim2.new(1, 30, 1, 30)
+	glow.Position = UDim2.new(0, -15, 0, -15)
+
+	glow.ZIndex = 0
+
+	uiCorner(frame, 8)
+
+
+	local uiStroke = Instance.new("UIStroke")
+	uiStroke.Parent = frame
+	uiStroke.Thickness = 4
+	uiStroke.Color = Color3.new(0.258824, 0.258824, 0.258824)
+	uiStroke.Transparency = 0.3
+
+	local uiGradient = Instance.new("UIGradient")
+	uiGradient.Parent = uiStroke
+
+
+	local scrollingFrame = Instance.new("ScrollingFrame")
+	scrollingFrame.Parent = frame
+	scrollingFrame.Name = "scrollingFrame"
+	scrollingFrame.Size = UDim2.new(1, 0,0.89, 0)
+	scrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+	scrollingFrame.BackgroundTransparency = 1
+	scrollingFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
+	scrollingFrame.Position = UDim2.new(0, 0, 0.075 ,0)
+	scrollingFrame.ScrollBarImageTransparency = 1
+	scrollingFrame.ScrollBarThickness = 8
+
+	local uiListLayout = Instance.new("UIListLayout")
+	uiListLayout.Parent = scrollingFrame
+	uiListLayout.Padding = UDim.new(0.01,0,0, 0)
+	
+	makeDraggable(frame)
+	
+	local titleFrame = Instance.new("Frame")
+	titleFrame.Parent = frame
+	titleFrame.Name = "titleFrame"
+	titleFrame.Size = UDim2.new(1, 0,0.07, 0)
+	titleFrame.BorderSizePixel = 0
+	titleFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+	
+	local title = Instance.new("TextLabel")
+	title.Parent = titleFrame
+	title.Name = "title"
+	title.Text = frameType
+	title.BackgroundTransparency = 1
+	title.TextSize = 21
+	title.Position = UDim2.new(0,0,0,0)
+	title.Size = UDim2.new(0.25, 0, 1, 0)
+	title.TextColor3 = Color3.new(1, 1, 1)
+	title.FontFace = Font.fromName(textFont)
+	title.TextStrokeColor3 = Color3.new(255, 255, 255)
+	title.TextStrokeTransparency = 0.7
+	
+	
+	local uiPadding = Instance.new("UIPadding")
+	uiPadding.Parent = title
+	uiPadding.PaddingLeft = UDim.new(0.1,0)
+	
+	if title.Text == "Movement" then
+		uiPadding.PaddingLeft = UDim.new(0.388,0)
+	end
+	
+	createButtons(frameType)
+end
+
+
+local function getHoverColor(color)
+	local h, s, v = color:ToHSV()
+	if v > 0.8 then
+		return Color3.fromHSV(h, s, v * 0.85)
+	else
+		return Color3.fromHSV(h, s, math.clamp(v * 1.25, 0, 1))
+	end
+end
+
+local function applyHoverEffect(guiObject)
+	if guiObject:IsA("GuiButton") then
+		guiObject.AutoButtonColor = false
+	end
+
+	if guiObject:IsA("TextButton") or guiObject:IsA("TextLabel") then
+		guiObject:SetAttribute("BaseBgColor", guiObject.BackgroundColor3)
+		guiObject:SetAttribute("BaseTextColor", guiObject.TextColor3)
+	elseif guiObject:IsA("ImageButton") or guiObject:IsA("ImageLabel") then
+		guiObject:SetAttribute("BaseImageColor", guiObject.ImageColor3)
+	end
+
+	guiObject.MouseEnter:Connect(function()
+		local hoverProps = {}
+
+		if guiObject:IsA("TextButton") or guiObject:IsA("TextLabel") then
+			hoverProps.BackgroundColor3 = getHoverColor(guiObject:GetAttribute("BaseBgColor"))
+			hoverProps.TextColor3 = getHoverColor(guiObject:GetAttribute("BaseTextColor"))
+		elseif guiObject:IsA("ImageButton") or guiObject:IsA("ImageLabel") then
+			hoverProps.ImageColor3 = getHoverColor(guiObject:GetAttribute("BaseImageColor"))
+		end
+
+		TweenService:Create(guiObject, tweenInfo, hoverProps):Play()
+	end)
+
+	guiObject.MouseLeave:Connect(function()
+		local leaveProps = {}
+
+		if guiObject:IsA("TextButton") or guiObject:IsA("TextLabel") then
+			leaveProps.BackgroundColor3 = guiObject:GetAttribute("BaseBgColor")
+			leaveProps.TextColor3 = guiObject:GetAttribute("BaseTextColor")
+		elseif guiObject:IsA("ImageButton") or guiObject:IsA("ImageLabel") then
+			leaveProps.ImageColor3 = guiObject:GetAttribute("BaseImageColor")
+		end
+
+		TweenService:Create(guiObject, tweenInfo, leaveProps):Play()
+	end)
+end
+
+
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Parent = mainScreenUI
+mainFrame.Name = "mainFrame"
+mainFrame.Size = UDim2.new(0.115, 0,0.5, 0)
+mainFrame.Position = UDim2.new(0.1, 0, 0.1, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+mainFrame.BorderSizePixel = 0
+
+local glow = Instance.new("ImageLabel")
+glow.Parent = mainFrame
+
+glow.Name = "Glow"
+glow.BackgroundTransparency = 1
+
+glow.Image = "rbxassetid://1316045217"
+
+glow.ImageColor3 = Color3.new(0,0,0)
+
+glow.ImageTransparency = 0.4
+
+glow.ScaleType = Enum.ScaleType.Slice
+glow.SliceCenter = Rect.new(10,10,118,118)
+
+glow.Size = UDim2.new(1, 30, 1, 30)
+glow.Position = UDim2.new(0, -15, 0, -15)
+
+glow.ZIndex = 0
+mainFrame.ZIndex = 1
+
+uiCorner(mainFrame, 8)
+
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Parent = mainFrame
+uiStroke.Thickness = 4
+uiStroke.Color = Color3.new(0.258824, 0.258824, 0.258824)
+uiStroke.Transparency = 0.3
+
+local uiGradient = Instance.new("UIGradient")
+uiGradient.Parent = uiStroke
+
+
+uiCorner(mainFrame, 8)
+
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Parent = mainFrame
+scrollingFrame.Name = "scrollingFrame"
+scrollingFrame.Size = UDim2.new(1, 0,0.89, 0)
+scrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 255, 255)
+scrollingFrame.BackgroundTransparency = 1
+scrollingFrame.VerticalScrollBarPosition = Enum.VerticalScrollBarPosition.Left
+scrollingFrame.Position = UDim2.new(0, 0, 0.075 ,0)
+scrollingFrame.ScrollBarImageTransparency = 1
+scrollingFrame.ScrollBarThickness = 0
+
+local uiListLayout = Instance.new("UIListLayout")
+uiListLayout.Parent = scrollingFrame
+uiListLayout.Padding = UDim.new(0.01,0,0, 0)
+
+local titleFrame = Instance.new("Frame")
+titleFrame.Parent = mainFrame
+titleFrame.Name = "titleFrame"
+titleFrame.Size = UDim2.new(1, 0,0.07, 0)
+titleFrame.BorderSizePixel = 0
+titleFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+
+makeDraggable(mainFrame)
+
+local featherImage = Instance.new("ImageLabel")
+featherImage.Parent = titleFrame
+featherImage.Name = "Feather"
+featherImage.BackgroundTransparency = 1
+featherImage.Size = UDim2.new(0.25, 0,1, 0)
+featherImage.Image = "rbxassetid://93633665863756"
+featherImage.Position = UDim2.new(0.23, 0,0.05, 0)
+
+local uiPadding = Instance.new("UIPadding")
+uiPadding.Parent = featherImage
+uiPadding.PaddingLeft = UDim.new(0.05,0)
+
+local title = Instance.new("TextLabel")
+title.Parent = titleFrame
+title.Name = "title"
+title.Text = "FW"
+title.BackgroundTransparency = 1
+title.TextScaled = true
+title.Position = UDim2.new(0,0,0,0)
+title.Size = UDim2.new(0.25, 0, 1, 0)
+title.TextColor3 = Color3.new(1, 1, 1)
+title.FontFace = Font.fromName(textFont)
+title.TextStrokeColor3 = Color3.new(255, 255, 255)
+title.TextStrokeTransparency = 0.7
+
+local uiPadding = Instance.new("UIPadding")
+uiPadding.Parent = title
+uiPadding.PaddingLeft = UDim.new(0.45,0)
+
+local settingsImage = Instance.new("ImageButton")
+settingsImage.Parent = titleFrame
+settingsImage.Name = "Settings"
+settingsImage.BackgroundTransparency = 1
+settingsImage.Size = UDim2.new(0.18, 0,0.67, 0)
+settingsImage.Position = UDim2.new(0.83, 0,0.17, 0)
+settingsImage.Image = "rbxassetid://120575276332005"
+settingsImage.ScaleType = Enum.ScaleType.Fit
+settingsImage.ImageColor3 = Color3.fromRGB(115,115,115)
+
+applyHoverEffect(settingsImage)
+
+local openArrow = Instance.new("TextLabel")
+openArrow.Parent = templateButton
+openArrow.Text = ">"
+openArrow.FontFace = Font.fromName(textFont)
+openArrow.TextColor3 = Color3.new(0.372549, 0.372549, 0.372549)
+openArrow.BackgroundTransparency = 1
+openArrow.Size = UDim2.new(0.2, 0, 0.7, 0)
+openArrow.TextSize = 20
+openArrow.Position = UDim2.new(0.75, 0, 0.21, 0)
+openArrow.RichText = true
+openArrow.Text = "<b>></b>"
+openArrow.Name = "openArrow"
+
+createFrame("Combat")
+createFrame("Visuals")
+createFrame("Utility")
+createFrame("Movement")
+createFrame("Game")
+
+local function openFrame(buttonClone)
+	local frame = mainScreenUI:FindFirstChild(buttonClone.Name)
+	frame.Visible = not frame.Visible
+
+	local newColor
+	if frame.Visible == true then
+		newColor = Color3.fromRGB(78, 173, 73)
+	else
+		newColor = Color3.fromRGB(255, 255, 255)
+	end
+
+	buttonClone:SetAttribute("BaseTextColor", newColor)
+
+	local currentHoverColor = getHoverColor(newColor)
+	TweenService:Create(buttonClone, tweenInfo, {TextColor3 = currentHoverColor}):Play()
+end
+
+for place, button in pairs(dictionary) do
+	local spacing = 0.02 * place
+	local buttonClone = templateButton:Clone()
+	buttonClone.Parent = scrollingFrame
+	buttonClone.Text = button
+	buttonClone.TextScaled = false
+	buttonClone.TextSize = 25
+	buttonClone.Name = button
+	buttonClone.Size = UDim2.new(1,0,0.04,0)
+	buttonClone.TextXAlignment = Enum.TextXAlignment.Left
+	buttonClone.LayoutOrder = place
+	
+	local uiPadding = Instance.new("UIPadding")
+	uiPadding.Parent = buttonClone
+	uiPadding.PaddingLeft = UDim.new(0.15,0)
+	
+	applyHoverEffect(buttonClone)
+	applyHoverEffect(buttonClone.openArrow)
+	applyTransparencyEffect(buttonClone)
+	
+
+	buttonClone.MouseButton1Click:Connect(function()
+	 if mainScreenUI:FindFirstChild(buttonClone.Name) then
+			openFrame(buttonClone)
+	 else
+			print(buttonClone.Name.." frame cannot be found")
+	  end
+	end)
+end
+
+UserInputService.InputBegan:Connect(function(input, GPE)
+	if input.KeyCode == Enum.KeyCode.RightShift and not GPE then
+		mainScreenUI.Enabled = not mainScreenUI.Enabled
+	end
+end)
+
