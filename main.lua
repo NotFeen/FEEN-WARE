@@ -1,4 +1,4 @@
--- LocalScript: Place in StarterPlayerScripts
+
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -9,11 +9,9 @@ local Workspace = game:GetService("Workspace")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- ==========================================
--- CONFIGURATION & CACHING
--- ==========================================
+
 local currentHotkey = Enum.KeyCode.F4
-local VISIBILITY_HOTKEY = Enum.KeyCode.RightShift -- Keybind to toggle panel visibility
+local VISIBILITY_HOTKEY = Enum.KeyCode.RightShift
 
 local ALLOWED_WEAPONS = {
 	["wood_sword"] = true, ["stone_sword"] = true, ["iron_sword"] = true,
@@ -43,9 +41,7 @@ local config = {
 local currentValidTargets = {}
 local connections = {}
 
--- ==========================================
--- UI & HIGHLIGHT GENERATOR
--- ==========================================
+
 local function createUI(className, props)
 	local el = Instance.new(className)
 	for k, v in pairs(props) do el[k] = v end
@@ -166,9 +162,7 @@ createSlider("Pushback Reach (Studs)", 9)
 
 local destroyBtn = createUI("TextButton", {Size = UDim2.new(0.9, 0, 0, 35), Text = "DESTROY PANEL", Font = Enum.Font.GothamBlack, TextSize = 14, BackgroundColor3 = Color3.fromRGB(150, 30, 30), TextColor3 = Color3.new(1, 1, 1), LayoutOrder = 10, Parent = mainFrame})
 
--- ==========================================
--- CUSTOM DRAGGING FUNCTION
--- ==========================================
+
 local dragToggle, dragStart, startPos
 local function updateDragInput(input)
 	local delta = input.Position - dragStart
@@ -195,9 +189,7 @@ table.insert(connections, UserInputService.InputChanged:Connect(function(input)
 	end
 end))
 
--- ==========================================
--- TARGET VALIDATION LOGIC
--- ==========================================
+-
 local function getEquippedWeaponName()
 	local char = player.Character
 	if not char then return nil end
@@ -266,9 +258,7 @@ local function scanForTargets()
 	return validTargets
 end
 
--- ==========================================
--- CORE COMBAT FIRE FUNCTION
--- ==========================================
+
 local function fireCombatEvent(triggerSource)
 	local equippedWeaponName = getEquippedWeaponName()
 	if not isActive or not equippedWeaponName then return end
@@ -318,9 +308,7 @@ local function fireCombatEvent(triggerSource)
 	end)
 end
 
--- ==========================================
--- UI & INPUT CONNECTIONS
--- ==========================================
+
 table.insert(connections, toggleBtn.MouseButton1Click:Connect(function()
 	isActive = not isActive
 	toggleBtn.Text = isActive and "STATUS: ON" or "STATUS: OFF"
@@ -388,9 +376,7 @@ table.insert(connections, UserInputService.InputEnded:Connect(function(input)
 	end
 end))
 
--- ==========================================
--- MAIN RUN LOOP
--- ==========================================
+
 local mainLoop = RunService.Heartbeat:Connect(function()
 	currentValidTargets = scanForTargets()
 	
@@ -415,9 +401,7 @@ end)
 
 table.insert(connections, mainLoop)
 
--- ==========================================
--- DESTROY/CLEANUP LOGIC
--- ==========================================
+
 destroyBtn.MouseButton1Click:Connect(function()
 	for _, conn in ipairs(connections) do
 		if conn.Connected then conn:Disconnect() end
