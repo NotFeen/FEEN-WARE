@@ -187,7 +187,6 @@ table.insert(connections, UserInputService.InputChanged:Connect(function(input)
 	end
 end))
 
--
 local function getEquippedWeaponName()
 	local char = player.Character
 	if not char then return nil end
