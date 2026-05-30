@@ -37,6 +37,8 @@ local lastHit = nil
 
 local findTargetStuds = 100
 
+local autoShoot = false
+
 local maxHoldTime = 0.1
 local maxClickInterval = 0.1   
 
@@ -123,6 +125,8 @@ local camera = workspace.CurrentCamera
 
 local localRootPart = Character:WaitForChild("HumanoidRootPart")
 local humanoid = Character:WaitForChild("Humanoid")
+
+local fireProjectileEvent = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("ProjectileFire")
 
 local currentTarget = nil
 local aimConnection = nil
@@ -989,8 +993,18 @@ AutoClicker:CreateToggle("Require Mouse Held", true, nil)
 local Reach = Combat:CreateButton("Reach", nil, true)
 
 local AutoShoot = Combat:CreateButton("AutoShoot", nil, true)
+AutoShoot:CreateToggle("Target Players", true, nil)
+AutoShoot:CreateToggle("Target NPCs/Dummies", false, nil)
 AutoShoot:CreateSlider("Range", 1, 100, 50)
-
+AutoShoot:CreateSlider("Chance of headshot", 1, 100, 100, nil)
+AutoShoot:CreateSlider("Chance of shot", 1, 100, 100, nil)
+AutoShoot:CreateToggle("Aim at Head", false, nil)
+AutoShoot:CreateToggle("Aim at Torso", true, nil)
+AutoShoot:CreateToggle("Randomize headshots & shots", false, nil)
+AutoShoot:CreateSlider("Randomization", 1, 100, 50, nil)
+AutoShoot:CreateToggle("Arrow", true, nil)
+AutoShoot:CreateToggle("Snowball", false, nil)
+AutoShoot:CreateSlider("Shoot duration", 0.01, 2, 0.4)
 
 local AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
 AutoSprint:CreateToggle("Bypass all items")
@@ -1050,7 +1064,7 @@ Killaura.Callbacks.OnToggle = function(state)
 
 			local hitDelay = Killaura.Values["Hit Delay"]
 			
-			if hitDelay and hitDelay <= 0.1 then
+			if hitDelay and hitDelay <= 0.01 then
 				RunService.Heartbeat:Wait(hitDelay)
 			else
 				task.wait(hitDelay)
@@ -1496,6 +1510,37 @@ local isSystemEnabled = false
 Velocity.Callbacks.OnToggle = function(state) isSystemEnabled = state end
 local lastVelocity = Vector3.zero
 
+AutoShoot.Callbacks.OnToggle = function(state) autoShoot = state end
+
+local function generateId()
+	local characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	local id = ""
+	for i = 1, 8 do
+		local randomIndex = math.random(1, #characters)
+		id = id .. string.sub(characters, randomIndex, randomIndex)
+	end
+	return id
+end
+
+local function fireProjectile(projectileName)
+	local args = {
+		inventoriesFolder:FindFirstChild(Player.Name):FindFirstChild(tostring(projectileName)),
+		tostring(projectileName),
+		tostring(projectileName),
+		vector.create(283.30645751953125, 81.4999771118164, 373.4439392089844),
+		vector.create(283.30645751953125, 79.4999771118164, 373.4439392089844),
+		vector.create(11.137795448303223, -16.100664138793945, 239.20016479492188),
+		generateId(), 
+		{
+			shotId = generateId(), 
+			drawDurationSec = AutoShoot.Values["Shoot duration"]
+		},
+		workspace:GetServerTimeNow() 
+	}
+
+	fireProjectileEvent:InvokeServer(unpack(args))
+end
+
 RunService.Heartbeat:Connect(function()
 	if not isSystemEnabled or not Player.Character then return end
 	local HRP = Player.Character:FindFirstChild("HumanoidRootPart")
@@ -1559,3 +1604,42 @@ RunService.Heartbeat:Connect(function()
 	lastVelocity = HRP.AssemblyLinearVelocity
 end)
 
+RunService.Heartbeat:Connect(function()
+	task.wait(AutoShoot.Values["Shoot duration"])
+	
+	if not autoShoot or Player.Character then return end
+	
+	if not AutoShoot.Values["Aim at Head"] and not AutoShoot.Values["Aim at Torso"] then return end
+	
+	if not AutoShoot.Values["Arrow"] and not AutoShoot.Values["Snowball"] then return end
+	
+	local character = Player.Character 
+	local HRP = Character:FindFirstChild("HumanoidRootPart")
+	
+	if inventoriesFolder then
+		local playerFolder = inventoriesFolder:FindFirstChild(Player.Name)
+		local Handinvitem = character:FindFirstChild("HandInvItem")
+		
+		if not playerFolder then return end
+		if not Handinvitem then return end
+		
+		local arrows = nil
+		local snowballs = nil
+		
+		if AutoShoot.Values["Arrow"] then
+			local arrows = playerFolder:FindFirstChild("arrow")
+		end
+		
+		if AutoShoot.Values["Snowball"] then
+			local snowballs = playerFolder:FindFirstChild("snowball")
+		end
+		
+		if not arrows or snowballs then return end
+		
+		if Handinvitem.Value.Name == "snowball" then
+			
+		end
+		
+		  
+	end
+end)
