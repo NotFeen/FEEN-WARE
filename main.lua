@@ -34,6 +34,7 @@ local lastSort = 2
 local currentKaTarget = nil
 local hitting = nil
 local lastHit = nil
+local stealChests = false
 
 local whiteHits = false
 
@@ -1078,6 +1079,16 @@ AutoSprint:CreateToggle("Don't auto sprint on gloops")
 
 local WhiteHits = Visuals:CreateButton("White Hits", nil, true)
 
+local ChestStealer = Utility:CreateButton("Chest Stealer", nil, true)
+ChestStealer:CreateSlider("Range", 1, 50, 25, nil)
+ChestStealer:CreateToggle("Crates")
+ChestStealer:CreateToggle("Chests")
+
+local AutoArmorSwitch = Utility:CreateButton("Auto Armor Switch", nil, true)
+AutoArmorSwitch:CreateSlider("Range",1, 75, 30)
+
+local fastDrop = Utility:CreateButton("Fast Drop", nil, true)
+
 
 local function isInFOV(myHRP, targetHRP, maxAngle)
 	local forward = myHRP.CFrame.LookVector
@@ -1600,7 +1611,7 @@ local function fireProjectile(projectileName, HRP, targetPart, itemRequired, tar
 	local targetPos = targetPart.Position
 	local direction = (targetPos - origin).Unit
 
-	local speed = 240
+	local speed = 150
 	local thirdPos = direction * speed
 
 	local ID = 0
@@ -1872,3 +1883,65 @@ RunService.Heartbeat:Connect(function()
 end)
 
 --WHITE HITS BUTTON
+
+local function findNearbyChests(radius)
+	if stealChests == false or nil then return end
+	local chests = {}
+	
+	for i, chest in pairs(inventoriesFolder:GetChildren()) do
+		if chest and chest:GetAttribute("Chest") == true then
+			if chest:FindFirstChild("ChestOwner") and Character then
+				local chestModel = chest.ChestOwner.Value
+				
+				local distance = (chestModel.Position - Character.PrimaryPart.Position).Magnitude
+				
+				if distance <= radius then
+					table.insert(chests, chestModel)
+				end
+			end
+		end
+		
+	end
+	
+	return chests
+
+end
+
+ChestStealer.Callbacks.OnToggle = function(state)
+	stealChests = state
+end
+
+RunService.Heartbeat:Connect(function()
+	if not stealChests then return end
+	
+	if Player.Character and Player.Character.Humanoid then
+		local character = Player.Character
+		local Humanoid = Character.Humanoid
+		
+		if Humanoid.Health > 0 then
+			local chests = findNearbyChests(ChestStealer.Values["Range"])
+			
+		   for i, chest in pairs(chests) do
+				if inventoriesFolder:FindFirstChild(chest) then
+					local chestInventory = chest.Value
+					
+					if chestInventory then
+						for i, item in pairs(chestInventory:GetChildren()) do
+							if item and item:GetAttribute("Amount") then
+								local blockChest = chestInventory.Name
+								local diamondItem = chestInventory:FindFirstChild(tostring(item.Name)) -- You'll need to verify the exact name of the object in the explorer
+
+								local args = {
+									blockChest,
+									diamondItem 
+								}
+
+								game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem"):InvokeServer(unpack(args))
+							end
+						end
+					end
+				end
+		   end
+		end
+	end
+end)
