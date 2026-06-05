@@ -1143,11 +1143,8 @@ Killaura.Callbacks.OnToggle = function(state)
 
 			local hitDelay = Killaura.Values["Hit Delay"]
 
-			if hitDelay and hitDelay <= 0.1 then
-				RunService.Heartbeat:Wait(hitDelay)
-			else
 				task.wait(hitDelay)
-			end
+			
 
 			kaHighlight.Adornee = nil
 
@@ -1887,22 +1884,22 @@ end)
 local function findNearbyChests(radius)
 	if stealChests == false or nil then return end
 	local chests = {}
-	
+
 	for i, chest in pairs(inventoriesFolder:GetChildren()) do
 		if chest and chest:GetAttribute("Chest") == true then
 			if chest:FindFirstChild("ChestOwner") and Character then
 				local chestModel = chest.ChestOwner.Value
-				
+
 				local distance = (chestModel.Position - Character.PrimaryPart.Position).Magnitude
-				
+
 				if distance <= radius then
 					table.insert(chests, chestModel)
 				end
 			end
 		end
-		
+
 	end
-	
+
 	return chests
 
 end
@@ -1913,18 +1910,18 @@ end
 
 RunService.Heartbeat:Connect(function()
 	if not stealChests then return end
-	
+
 	if Player.Character and Player.Character.Humanoid then
 		local character = Player.Character
 		local Humanoid = Character.Humanoid
-		
+
 		if Humanoid.Health > 0 then
 			local chests = findNearbyChests(ChestStealer.Values["Range"])
-			
-		   for i, chest in pairs(chests) do
+
+			for i, chest in pairs(chests) do
 				if inventoriesFolder:FindFirstChild(chest) then
 					local chestInventory = chest.Value
-					
+
 					if chestInventory then
 						for i, item in pairs(chestInventory:GetChildren()) do
 							if item and item:GetAttribute("Amount") then
@@ -1941,7 +1938,7 @@ RunService.Heartbeat:Connect(function()
 						end
 					end
 				end
-		   end
+			end
 		end
 	end
 end)
