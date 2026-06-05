@@ -1850,9 +1850,14 @@ task.spawn(function()
 			-- -----------------------------
 
 			print(projectileName)
-
-			fireProjectile(projectileName, HRP, bestTarget.HumanoidRootPart, handItemName,  bestTarget)
-
+			
+			if AutoShoot.Values["Aim at Head"] and AutoShoot.Values["Aim at Torso"] then
+				fireProjectile(projectileName, HRP, bestTarget.Head, handItemName,  bestTarget)
+			elseif AutoShoot.Values["Aim at Torso"] and not AutoShoot.Values["Aim at Head"] then
+				fireProjectile(projectileName, HRP, bestTarget.Torso, handItemName, bestTarget)
+			elseif not AutoShoot.Values["Aim at Torso"] and AutoShoot.Values["Aim at Head"] then
+				fireProjectile(projectileName, HRP, bestTarget.Head, handItemName, bestTarget)
+			end
 		end
 	end
 end)
