@@ -135,15 +135,26 @@ local camera = workspace.CurrentCamera
 local localRootPart = Character:WaitForChild("HumanoidRootPart")
 local humanoid = Character:WaitForChild("Humanoid")
 
+local animator = humanoid:WaitForChild("Animator")
+
 local fireProjectileEvent = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("ProjectileFire")
 
 local currentTarget = nil
 local aimConnection = nil
+local currentTrack = nil
 
 -- === CONFIGURATION ===
 local textFont = "Zekton"
 local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 local DRAG_SMOOTHNESS = 0.2 -- Lower = slower/smoother, Higher = faster snap! (0.1 to 0.3 is best)
+
+local HH_HOLD_ANIMATION_ID = "rbxassetid://13421339706"
+local HH_SHOOT_ANIMATION_ID = "rbxassetid://13421344632"
+local BOW_HOLD_ANIMATION_ID = "rbxassetid://15222797648"
+local BOW_SHOOT_ANIMATION_ID = "rbxassetid://8860294521"
+local CB_HOLD_ANIMATION_ID = "rbxassetid://8860301164"
+local CB_SHOOT_ANIMATION_ID = "rbxassetid://8860304406"
+
 
 -- Cleanup Old GUI
 local oldGui = PlayerGui:FindFirstChild("FeatherWare")
@@ -1028,7 +1039,7 @@ Killaura:CreateToggle("Require Sword Equipped", true, nil)
 Killaura:CreateToggle("Multi Target Hit", false, nil)
 
 local AimAssist = Combat:CreateButton("Aim Assist",nil, true)
-AimAssist:CreateSlider("Range", 1, 150, 100, nil)
+AimAssist:CreateSlider("Range", 1, 150, 10000, nil)
 AimAssist:CreateSlider("Smoothness", 0, 100, 50, nil)
 AimAssist:CreateSlider("Shake Intensity", 0, 2, 0, nil)
 AimAssist:CreateSlider("Shake Speed", 0, 20, 0, nil)
@@ -1069,8 +1080,8 @@ AutoShoot:CreateToggle("Aim at Head", false, nil)
 AutoShoot:CreateToggle("Aim at Torso", true, nil)
 AutoShoot:CreateSlider("Chance of headshot", 1, 100, 100, nil)
 AutoShoot:CreateSlider("Chance of shot", 1, 100, 100, nil)
-AutoShoot:CreateToggle("Randomize headshots & shots", false, nil)
-AutoShoot:CreateSlider("Randomization", 1, 100, 50, nil)
+--AutoShoot:CreateToggle("Randomize headshots & shots", false, nil)
+--AutoShoot:CreateSlider("Randomization", 1, 100, 50, nil)
 AutoShoot:CreateDropdown("Projectiles", {"arrow", "snowball", "mage_spell_base"}, "arrow", nil, true)
 AutoShoot:CreateSlider("Shoot duration", 0.01, 2, 0.4)
 local AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
@@ -1600,12 +1611,79 @@ local function generateId()
 	return id
 end
 
+local loadedAnimations = {}
+local activeHoldTrack = nil
+
+local function getLoadedTrack(animator, ID)
+	local cacheKey = tostring(animator) .. "_" .. ID
+	if not loadedAnimations[cacheKey] then
+		local animation = Instance.new("Animation")
+		animation.AnimationId = ID
+		loadedAnimations[cacheKey] = animator:LoadAnimation(animation)
+	end
+	return loadedAnimations[cacheKey]
+end
+
+local function playHoldAnimation(animator, ID)
+	local holdTrack = getLoadedTrack(animator, ID)
+
+	if activeHoldTrack and activeHoldTrack ~= holdTrack then
+		activeHoldTrack:Stop()
+	end
+
+	if not holdTrack.IsPlaying then
+		holdTrack:Play()
+	end
+
+	activeHoldTrack = holdTrack
+end
+
+local lastShootAnimTime = 0
+local VISUAL_COOLDOWN = 0.1 -- Plays a max of 10 times per second
+
+local function stopHoldAnimation()
+	if activeHoldTrack and activeHoldTrack.IsPlaying then
+		activeHoldTrack:Stop()
+	end
+	activeHoldTrack = nil
+end
+
+
+local function playShootAnimation(animator, ID)
+	local currentTime = os.clock()
+
+	-- If it hasn't been long enough since the last animation, skip it.
+	-- The projectile still fires, but we don't break the animator.
+	if currentTime - lastShootAnimTime < VISUAL_COOLDOWN then
+		return 
+	end
+
+	lastShootAnimTime = currentTime
+
+	local shootTrack = getLoadedTrack(animator, ID)
+	shootTrack:Stop()
+	shootTrack:Play()
+end
 local function fireProjectile(projectileName, HRP, targetPart, itemRequired, target)
 
-	local origin = HRP.Position + Vector3.new(0, 2, 0)
+	local origin = HRP.Position
 	if not targetPart then return end
+	
+	if not Player.Character then return end
+
+	local character = Player.Character 
+	local playerFolder = inventoriesFolder:FindFirstChild(Player.Name)
+	local Handinvitem = character:FindFirstChild("HandInvItem")
+	
+	if not humanoid then return end
+	if not animator then return end
+	
+	local handItemName = tostring(Handinvitem.Value.Name)
 
 	local targetPos = targetPart.Position
+	if targetPart.Name == "Head" then
+		targetPos = targetPart.Position + Vector3.new(0,1,0)
+	end
 	local direction = (targetPos - origin).Unit
 
 	local speed = 150
@@ -1628,7 +1706,22 @@ local function fireProjectile(projectileName, HRP, targetPart, itemRequired, tar
 		},
 		workspace:GetServerTimeNow()
 	}
+	
+	task.spawn(function()
+		-- 1. Stop the hold animation to return to an idle stance
+		stopHoldAnimation()
 
+		-- 2. Play the quick shoot animation
+		if handItemName == "wood_bow" then
+			playShootAnimation(animator, BOW_SHOOT_ANIMATION_ID)
+		elseif handItemName == "wood_crossbow" then
+			playShootAnimation(animator, CB_SHOOT_ANIMATION_ID)
+		elseif handItemName == "headhunter" then
+			playShootAnimation(animator, HH_SHOOT_ANIMATION_ID)
+		end
+	end)
+	
+	
 	fireProjectileEvent:InvokeServer(unpack(args))
 
 	local args = {
@@ -1764,36 +1857,45 @@ local function findClosestNPC(radius, rootPart)
 	end
 end
 
+local lastShotTimes = {}
+
+local WeaponStats = {
+	["wood_bow"]      = { Charge = 0.8, Cooldown = 0.1 },  -- Bows must be drawn back
+	["wood_crossbow"] = { Charge = 0.0, Cooldown = 1.3 },  -- Crossbows fire instantly, reload slow
+	["headhunter"]    = { Charge = 0.0, Cooldown = 1.3 },  -- Sniper fires instantly, reloads slow
+	["snowball"]      = { Charge = 0.0, Cooldown = 0.01 }, -- Fast projectiles
+	["fireball"]      = { Charge = 0.0, Cooldown = 0.1 },
+}
+
+-- ==========================================
+-- 2. THE AUTO-SHOOT LOOP
+-- ==========================================
 task.spawn(function()
 	while true do
-		task.wait(AutoShoot.Values["Shoot duration"])
+		task.wait(0.05) 
 
-		-- Use 'continue' to skip this cycle but keep the loop alive
 		if not autoShoot then continue end
-
 		if not AutoShoot.Values["Aim at Head"] and not AutoShoot.Values["Aim at Torso"] then continue end
-
 		if #AutoShoot.Values["Projectiles"] == 0 then continue end
-
 		if not Player.Character then continue end
 
 		local character = Player.Character 
 		local HRP = character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character:FindFirstChild("Humanoid")
+		local animator = humanoid and humanoid:FindFirstChild("Animator")
 
-		if inventoriesFolder then
+		if inventoriesFolder and animator then
 			local playerFolder = inventoriesFolder:FindFirstChild(Player.Name)
 			local Handinvitem = character:FindFirstChild("HandInvItem")
 
-			if not playerFolder then continue end
-			if not Handinvitem then continue end
-
-			if Handinvitem.Value == nil then continue end
+			if not playerFolder or not Handinvitem or Handinvitem.Value == nil then continue end
 
 			local item = playerFolder:FindFirstChild(Handinvitem.Value.Name)
 			if not item then continue end
 
-			local plrTarget, plrDistance = nil
-			local npcTarget, npcDistance = nil
+			-- --- FIND TARGETS ---
+			local plrTarget, plrDistance = nil, nil
+			local npcTarget, npcDistance = nil, nil
 			local bestTarget = nil
 
 			if AutoShoot.Values["Target Players"] == true then
@@ -1805,58 +1907,93 @@ task.spawn(function()
 			end
 
 			if plrTarget and npcTarget then
-				if plrDistance >= npcDistance then
-					bestTarget = plrTarget
-				else
-					bestTarget = npcTarget
-				end
-			end
-
-			if plrTarget and not npcTarget then
-				bestTarget = plrTarget
-			elseif npcTarget and not plrTarget then
-				bestTarget = npcTarget
-			elseif not npcTarget and not plrTarget then
-				continue -- Fixed here
-			end
+				bestTarget = (plrDistance >= npcDistance) and plrTarget or npcTarget
+			elseif plrTarget then bestTarget = plrTarget
+			elseif npcTarget then bestTarget = npcTarget
+			else continue end
 
 			-- --- PROJECTILE LOGIC ---
 			local handItemName = tostring(Handinvitem.Value.Name)
 			local projectileName = nil
-			local itemRequired = nil
 
-			-- 1. Check if holding a bow
 			if table.find(bows, handItemName) then
-				-- Only if holding a bow, look for an arrow in the folder
 				if playerFolder:FindFirstChild("arrow") then
 					projectileName = "arrow"
-
-					itemRequired = handItemName
 				end
-
-				-- 2. Check if holding other projectiles (Snowball, etc.)
-				-- This only runs if they are NOT holding a bow
 			elseif table.find(AutoShoot.Values["Projectiles"], handItemName) then
 				projectileName = handItemName
 			end
 
-			-- If projectileName is still nil, it means:
-			-- A) Holding a bow but no arrow in inventory
-			-- B) Holding an arrow (but not a bow)
-			-- C) Holding an item that isn't a projectile
-			if projectileName == nil then
-				continue
-			end
-			-- -----------------------------
+			if projectileName == nil then continue end
 
-			print(projectileName)
-			
+			-- ==========================================
+			-- TIMELINE & COOLDOWN LOGIC
+			-- ==========================================
+			local currentTime = os.clock()
+			local currentTime = os.clock()
+
+			-- Get weapon stats, or default to 0 charge / safe cooldown
+			local stats = WeaponStats[handItemName] or { Charge = 0, Cooldown = 0.3 }
+			local actualCharge = stats.Charge
+			local actualCooldown = stats.Cooldown
+
+			-- If your GUI 'Shoot duration' is set HIGHER than the weapon's built-in delay, respect the GUI
+			local guiDelay = AutoShoot.Values["Shoot duration"] or 0
+			if guiDelay > (actualCharge + actualCooldown) then
+				actualCooldown = guiDelay - actualCharge
+			end
+
+			local totalCycleTime = actualCharge + actualCooldown
+
+			-- If not enough time has passed since we last fired THIS weapon, skip this cycle
+			if currentTime - (lastShotTimes[handItemName] or 0) < totalCycleTime then
+				continue 
+			end
+
+			-- Mark the timestamp of this shot right now to block other iterations
+			lastShotTimes[handItemName] = currentTime
+
+			-- Determine target part
+			local chanceOfHeadShot = AutoShoot.Values["Chance of headshot"]
+			local chanceOfShot = AutoShoot.Values["Chance of shot"]
+			local headshotChance = math.random(1, 100)
+			local shotChance = math.random(1, 100)
+
+			local targetPart = nil
 			if AutoShoot.Values["Aim at Head"] and AutoShoot.Values["Aim at Torso"] then
-				fireProjectile(projectileName, HRP, bestTarget.Head, handItemName,  bestTarget)
+				if chanceOfHeadShot >= headshotChance then targetPart = bestTarget:FindFirstChild("Head")
+				elseif chanceOfShot >= shotChance then targetPart = bestTarget:FindFirstChild("UpperTorso") end
 			elseif AutoShoot.Values["Aim at Torso"] and not AutoShoot.Values["Aim at Head"] then
-				fireProjectile(projectileName, HRP, bestTarget.Torso, handItemName, bestTarget)
+				if chanceOfShot >= shotChance then targetPart = bestTarget:FindFirstChild("UpperTorso") end
 			elseif not AutoShoot.Values["Aim at Torso"] and AutoShoot.Values["Aim at Head"] then
-				fireProjectile(projectileName, HRP, bestTarget.Head, handItemName, bestTarget)
+				if chanceOfHeadShot >= headshotChance then targetPart = bestTarget:FindFirstChild("Head") end
+			end
+
+			-- Handle animations and firing
+			if targetPart then
+				-- Only play hold animation and yield if the weapon actually requires CHARGING (like a bow)
+				if actualCharge > 0 then
+					if handItemName == "wood_bow" then
+						playHoldAnimation(animator, BOW_HOLD_ANIMATION_ID)
+					elseif handItemName == "wood_crossbow" then
+						playHoldAnimation(animator, CB_HOLD_ANIMATION_ID)
+					elseif handItemName == "headhunter" then
+						playHoldAnimation(animator, HH_HOLD_ANIMATION_ID)
+					end
+
+					-- Yield visually to show the charge-up
+					task.wait(actualCharge) 
+				end
+
+				if not Handinvitem or not Handinvitem.Value then stopHoldAnimation() continue end
+				-- Fire the projectile asynchronously so it doesn't freeze the loop
+				task.spawn(function()
+					fireProjectile(projectileName, HRP, targetPart, handItemName, bestTarget)
+				end)
+
+			else
+				-- If target is lost before firing, drop the weapon
+				stopHoldAnimation()
 			end
 		end
 	end
