@@ -561,27 +561,38 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 
 		if _G.SavedConfig[settingID] ~= nil then
 			default = _G.SavedConfig[settingID]
+			-- Fix 1: Snap floating-point drift back to valid intervals on load
+			default = math.floor((default - min) / sStep + 0.5) * sStep + min
 		else
 			_G.SavedConfig[settingID] = default
+		end
+
+		local function formatVal(val)
+			local stepStr = tostring(sStep)
+			local decimals = 0
+			if stepStr:find("%.") then decimals = #stepStr - stepStr:find("%.") end
+			return string.format("%." .. decimals .. "f", val)
 		end
 
 		local sFrame = Instance.new("Frame", settingsCont)
 		sFrame.Size = UDim2.new(1, 0, 0, 38)
 		sFrame.BackgroundTransparency = 1
 
-		local lbl = Instance.new("TextLabel", sFrame)
-		lbl.Text = "      " .. sName .. ": " .. default
+		-- Fix 2: Changed to a TextBox so you can type exact numbers if dragging skips them
+		local lbl = Instance.new("TextBox", sFrame)
+		lbl.Text = "      " .. sName .. ": " .. formatVal(default)
 		lbl.Size = UDim2.new(1, 0, 0.6, 0)
 		lbl.BackgroundTransparency = 1
 		lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
 		lbl.TextSize = 18
 		lbl.TextXAlignment = Enum.TextXAlignment.Left
 		lbl.FontFace = Font.fromName(textFont)
+		lbl.ClearTextOnFocus = false
 
 		local bg = Instance.new("TextButton", sFrame)
 		bg.Text = ""
-		bg.Size = UDim2.new(0.75, 0, 0.15, 0)
-		bg.Position = UDim2.new(0.125, 0, 0.65, 0)
+		bg.Size = UDim2.new(0.85, 0, 0.15, 0) -- Made wider (0.75 -> 0.85) for higher mouse precision
+		bg.Position = UDim2.new(0.075, 0, 0.65, 0)
 		bg.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 		uiCorner(bg, 4)
 
@@ -593,6 +604,30 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		mod.Values[sName] = default
 		if sCallback then sCallback(default) end
 
+		local function updateSliderVisual(val)
+			local percent = math.clamp((val - min) / (max - min), 0, 1)
+			fill.Size = UDim2.new(percent, 0, 1, 0)
+			lbl.Text = "      " .. sName .. ": " .. formatVal(val)
+			mod.Values[sName] = val
+			_G.SavedConfig[settingID] = val
+			saveConfigToPC()
+			if sCallback then sCallback(val) end
+			if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(sName, val) end
+		end
+
+		-- Manual Typing Input Handler
+		lbl.FocusLost:Connect(function()
+			local rawText = lbl.Text:match(":%s*(.-)$") or lbl.Text
+			local num = tonumber(rawText)
+			if num then
+				num = math.floor((num - min) / sStep + 0.5) * sStep + min
+				num = math.clamp(num, min, max)
+				updateSliderVisual(num)
+			else
+				updateSliderVisual(mod.Values[sName])
+			end
+		end)
+
 		bg.MouseButton1Down:Connect(function()
 			local moveConn, releaseConn
 			moveConn = RunService.RenderStepped:Connect(function()
@@ -603,16 +638,7 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 				val = math.floor((val - min) / sStep + 0.5) * sStep + min
 				val = math.clamp(val, min, max)
 
-				fill.Size = UDim2.new(relative, 0, 1, 0)
-				lbl.Text = string.format("      %s: %.2f", sName, val)
-
-				mod.Values[sName] = val
-
-				_G.SavedConfig[settingID] = val
-				saveConfigToPC()
-
-				if sCallback then sCallback(val) end
-				if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(sName, val) end
+				updateSliderVisual(val)
 			end)
 			releaseConn = UserInputService.InputEnded:Connect(function(input)
 				if input.UserInputType == Enum.UserInputType.MouseButton1 then
