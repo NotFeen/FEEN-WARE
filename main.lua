@@ -44,7 +44,7 @@ local loops = {
 	["auto balloon"] = false,
 	["auto pearl"] = false,
 	["void drop"] = false,
-	["auto clicker"]
+	["auto clicker"] = false
 }
 
 
