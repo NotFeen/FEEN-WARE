@@ -47,6 +47,9 @@ local loops = {
 	["auto clicker"] = false
 }
 
+local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
+
+
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -175,6 +178,8 @@ local kaArgs = {
 local startTime = 0
 local lastClickTime = 0
 local clicking = false
+
+local isDropping = false
 
 local lastShotTimes = {}
 local firingLocks = {} 
@@ -559,28 +564,31 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		sStep = sStep or 0.01
 		local settingID = uniquePrefix .. "_" .. sName
 
-		if _G.SavedConfig[settingID] ~= nil then
-			default = _G.SavedConfig[settingID]
-			-- Fix 1: Snap floating-point drift back to valid intervals on load
-			default = math.floor((default - min) / sStep + 0.5) * sStep + min
-		else
-			_G.SavedConfig[settingID] = default
+		-- Auto-detect how many decimals to show based on your step size
+		local decimals = 0
+		local stepStr = tostring(sStep)
+		if stepStr:find("%.") then decimals = #stepStr - stepStr:find("%.") end
+		local formatStr = "%." .. decimals .. "f"
+
+		-- Absolute fix for the 0.039884 floating-point glitch
+		local function cleanVal(val)
+			val = math.clamp(val, min, max)
+			local snapped = math.floor((val - min) / sStep + 0.5) * sStep + min
+			return tonumber(string.format(formatStr, snapped))
 		end
 
-		local function formatVal(val)
-			local stepStr = tostring(sStep)
-			local decimals = 0
-			if stepStr:find("%.") then decimals = #stepStr - stepStr:find("%.") end
-			return string.format("%." .. decimals .. "f", val)
+		if _G.SavedConfig[settingID] ~= nil then
+			default = cleanVal(_G.SavedConfig[settingID])
+		else
+			_G.SavedConfig[settingID] = cleanVal(default)
 		end
 
 		local sFrame = Instance.new("Frame", settingsCont)
 		sFrame.Size = UDim2.new(1, 0, 0, 38)
 		sFrame.BackgroundTransparency = 1
 
-		-- Fix 2: Changed to a TextBox so you can type exact numbers if dragging skips them
 		local lbl = Instance.new("TextBox", sFrame)
-		lbl.Text = "      " .. sName .. ": " .. formatVal(default)
+		lbl.Text = "      " .. sName .. ": " .. string.format(formatStr, default)
 		lbl.Size = UDim2.new(1, 0, 0.6, 0)
 		lbl.BackgroundTransparency = 1
 		lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
@@ -591,7 +599,7 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 
 		local bg = Instance.new("TextButton", sFrame)
 		bg.Text = ""
-		bg.Size = UDim2.new(0.85, 0, 0.15, 0) -- Made wider (0.75 -> 0.85) for higher mouse precision
+		bg.Size = UDim2.new(0.85, 0, 0.15, 0)
 		bg.Position = UDim2.new(0.075, 0, 0.65, 0)
 		bg.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 		uiCorner(bg, 4)
@@ -605,39 +613,37 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		if sCallback then sCallback(default) end
 
 		local function updateSliderVisual(val)
+			val = cleanVal(val)
 			local percent = math.clamp((val - min) / (max - min), 0, 1)
 			fill.Size = UDim2.new(percent, 0, 1, 0)
-			lbl.Text = "      " .. sName .. ": " .. formatVal(val)
+			lbl.Text = "      " .. sName .. ": " .. string.format(formatStr, val)
+
 			mod.Values[sName] = val
 			_G.SavedConfig[settingID] = val
 			saveConfigToPC()
+
 			if sCallback then sCallback(val) end
 			if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(sName, val) end
 		end
 
-		-- Manual Typing Input Handler
+		-- Typing Input Fallback
 		lbl.FocusLost:Connect(function()
 			local rawText = lbl.Text:match(":%s*(.-)$") or lbl.Text
 			local num = tonumber(rawText)
 			if num then
-				num = math.floor((num - min) / sStep + 0.5) * sStep + min
-				num = math.clamp(num, min, max)
 				updateSliderVisual(num)
 			else
 				updateSliderVisual(mod.Values[sName])
 			end
 		end)
 
+		-- Mouse Dragging
 		bg.MouseButton1Down:Connect(function()
 			local moveConn, releaseConn
 			moveConn = RunService.RenderStepped:Connect(function()
 				local mouseP = UserInputService:GetMouseLocation().X
 				local relative = math.clamp((mouseP - bg.AbsolutePosition.X) / bg.AbsoluteSize.X, 0, 1)
 				local val = min + ((max - min) * relative)
-
-				val = math.floor((val - min) / sStep + 0.5) * sStep + min
-				val = math.clamp(val, min, max)
-
 				updateSliderVisual(val)
 			end)
 			releaseConn = UserInputService.InputEnded:Connect(function(input)
@@ -646,6 +652,16 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 					releaseConn:Disconnect()
 				end
 			end)
+		end)
+
+		-- Ultra Precision: Hover over slider and scroll your Mouse Wheel to fine tune!
+		sFrame.InputChanged:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseWheel then
+				local delta = input.Position.Z -- 1 for scroll up, -1 for scroll down
+				local currentVal = mod.Values[sName]
+				local newVal = currentVal + (delta * sStep)
+				updateSliderVisual(newVal)
+			end
 		end)
 	end
 
@@ -1288,6 +1304,11 @@ local AutoArmorSwitch = Utility:CreateButton("Auto Armor Switch", nil, true)
 AutoArmorSwitch:CreateSlider("Range",1, 75, 30)
 
 local fastDrop = Utility:CreateButton("Fast Drop", nil, true)
+fastDrop.Values["Drop Keybind"] = Enum.KeyCode.H
+fastDrop:CreateKeybind("Drop Keybind", Enum.KeyCode.H, function(newKey)
+	fastDrop.Values["Drop Keybind"] = newKey
+end)
+fastDrop:CreateSlider("Drop Rate", 0.000001, 1, 0.1, nil)
 
 local AutoBalloon = Utility:CreateButton("Auto Balloon", nil, true)
 AutoBalloon:CreateSlider("Void range", 1, 250, 100, nil)
@@ -2625,32 +2646,115 @@ AutoPearl.Callbacks.OnToggle = function(state)
 	end
 end
 
-VoidDrop.Callbacks.OnToggle = function(state)
-	loops["void drop"] = state
-end
+local function dropAllItems(iron, diamond, emerald)
+	local playerInventory = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):FindFirstChild(game.Players.LocalPlayer.Name)
+	if not playerInventory then return end
 
-while loops["void drop"] do
-	task.wait(0.05)
+	if iron == true then
+		local ironItem = playerInventory:FindFirstChild("iron")
+		if ironItem then
+			local args = {
+				{
+					item = ironItem,
+					amount = ironItem:GetAttribute("Amount")
+				}
+			}
+			
+			dropRemote:InvokeServer(unpack(args))
+		end
+	end
 	
-	local char = Player.Character
-
-	if not char then continue end
-
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	local hum = char:FindFirstChild("Humanoid")
-
-
-	if hrp and hum and hum.Health > 0 then
-		local voidRange = tonumber(VoidDrop.Values["Void range"])
-		local threshold = -voidRange
-
-		if hrp.Position.Y <= threshold then
+	if diamond == true then
+		local diamondItem = playerInventory:FindFirstChild("diamond")
+		if diamondItem then
+			local diamondArgs = {
+				{
+					item = diamondItem,
+					amount = diamondItem:GetAttribute("Amount")
+				}
+			}
 			
+			dropRemote:InvokeServer(unpack(diamondArgs))
+		end
+	end
+	
+	if emerald == true then
+		local emeraldItem = playerInventory:FindFirstChild("emerald")
+		if emeraldItem then
+			local emeraldArgs = {
+				{
+					item = emeraldItem,
+					amount = emeraldItem:GetAttribute("Amount")
+				}
+			}
 			
+			dropRemote:InvokeServer(unpack(emeraldArgs))
 		end
 	end
 end
 
-AutoClicker.Callbacks.OnToggle = function(state)
-	
+VoidDrop.Callbacks.OnToggle = function(state)
+	loops["void drop"] = state
 end
+
+
+task.spawn(function()
+	while true do
+		task.wait(0.1) 
+
+		if loops["void drop"] then
+			local char = Player.Character
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			local hum = char:FindFirstChild("Humanoid")
+
+			if hrp and hum and hum.Health > 0 then
+				local voidRange = tonumber(VoidDrop.Values["Void range"])
+
+				if hrp.Position.Y <= -voidRange then
+					dropAllItems(true, true, true) 
+				end
+			end
+		end
+	end
+end)
+
+fastDrop.Callbacks.OnToggle = function(state)
+	loops["fast drop"] = state
+end
+UserInputService.InputBegan:Connect(function(input)
+	if loops["fast drop"] and input.KeyCode == fastDrop.Values["Drop Keybind"] then
+		if not isDropping then
+			isDropping = true
+
+			task.spawn(function()
+				while isDropping and UserInputService:IsKeyDown(fastDrop.Values["Drop Keybind"]) do
+					local currentCharacter = Player.Character
+					if not currentCharacter then break end
+
+					local handItem = currentCharacter:FindFirstChild("HandInvItem")
+					if not handItem then break end
+
+					local characterItem = handItem.Value.Name
+
+					local playerInventory = inventoriesFolder:FindFirstChild(Player.Name)
+					if not playerInventory then break end
+
+					local inventoryItem = playerInventory:FindFirstChild(characterItem)
+					if not inventoryItem then break end
+
+					local args = {
+						{
+							item = inventoryItem,
+							amount = 1
+						}
+					}
+
+					dropRemote:InvokeServer(unpack(args))
+
+					task.wait(fastDrop.Values["Drop Rate"])
+				end
+				isDropping = false
+			end)
+		end
+	end
+end)
