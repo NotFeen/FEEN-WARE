@@ -1,8 +1,12 @@
 local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
 local FILE_NAME = "UI_AutoSave_Config.json"
 
 -- Master table to hold all session settings
 _G.SavedConfig = {}
+_G.IsBindingKey = false -- Prevent hotkeys from firing while re-binding
 
 -- Load settings from PC on startup
 if readfile and pcall(function() return readfile(FILE_NAME) end) then
@@ -27,7 +31,7 @@ local function saveConfigToPC()
 end
 
 local loops = {
-	killaura = {false},
+	killaura = false,
 	["aim assist"] = false,
 	velocity = false,
 	reach = false,
@@ -42,25 +46,6 @@ local loops = {
 	["void drop"] = false
 }
 
-if _G.SavedConfig then
-	for savedKey, savedValue in pairs(_G.SavedConfig) do
-		if string.find(savedKey, "_MainToggle") then
-			local cleanName = savedKey:match("_(.-)_MainToggle")
-			if cleanName then
-				cleanName = string.lower(cleanName)
-
-				if loops[cleanName] ~= nil then
-					if type(loops[cleanName]) == "table" then
-						loops[cleanName][1] = savedValue
-					else
-						loops[cleanName] = savedValue
-					end
-				end
-			end
-		end
-	end
-	print("[AutoSave] Loops table successfully updated with saved settings!")
-end
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -518,659 +503,669 @@ closeOverlayBtn.MouseButton1Click:Connect(function()
 	mainScroll.Visible = true
 end)
 
--- === ELEMENT GENERATOR FUNCTION ===
--- Add 'uniquePrefix' parameter to the function
 local function injectElements(mod, settingsCont, uniquePrefix)
-					uniquePrefix = uniquePrefix or "Overlay"
+	uniquePrefix = uniquePrefix or "Overlay"
 
-					function mod:CreateLabel(text)
-						local lbl = Instance.new("TextLabel", settingsCont)
-						lbl.Size = UDim2.new(1, 0, 0, 25)
-						lbl.BackgroundTransparency = 1
-						lbl.Text = "      " .. text
-						lbl.TextColor3 = Color3.fromRGB(150, 150, 150)
-						lbl.TextSize = 18
-						lbl.TextXAlignment = Enum.TextXAlignment.Left
-						lbl.FontFace = Font.fromName(textFont)
+	function mod:CreateLabel(text)
+		local lbl = Instance.new("TextLabel", settingsCont)
+		lbl.Size = UDim2.new(1, 0, 0, 25)
+		lbl.BackgroundTransparency = 1
+		lbl.Text = "      " .. text
+		lbl.TextColor3 = Color3.fromRGB(150, 150, 150)
+		lbl.TextSize = 18
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.FontFace = Font.fromName(textFont)
+	end
+
+	function mod:CreateToggle(tName, default, tCallback)
+		local settingID = uniquePrefix .. "_" .. tName
+
+		if _G.SavedConfig[settingID] ~= nil then
+			default = _G.SavedConfig[settingID]
+		else
+			_G.SavedConfig[settingID] = default
+		end
+
+		mod.Values[tName] = default 
+
+		local tFrame = Instance.new("TextButton", settingsCont)
+		tFrame.Size = UDim2.new(1, 0, 0, 28)
+		tFrame.BackgroundTransparency = 1
+		tFrame.Text = "      - " .. tName
+		tFrame.TextColor3 = default and Color3.fromRGB(78, 173, 73) or Color3.fromRGB(180, 180, 180)
+		tFrame.TextSize = 20
+		tFrame.TextXAlignment = Enum.TextXAlignment.Left
+		tFrame.FontFace = Font.fromName(textFont)
+
+		local toggledState = default
+
+		if tCallback then tCallback(toggledState) end
+
+		tFrame.MouseButton1Click:Connect(function()
+			toggledState = not toggledState
+			tFrame.TextColor3 = toggledState and Color3.fromRGB(78, 173, 73) or Color3.fromRGB(180, 180, 180)
+			mod.Values[tName] = toggledState
+
+			_G.SavedConfig[settingID] = toggledState
+			saveConfigToPC()
+
+			if tCallback then tCallback(toggledState) end
+			if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(tName, toggledState) end
+		end)
+	end
+
+	function mod:CreateSlider(sName, min, max, default, sCallback, sStep)
+		sStep = sStep or 0.01
+		local settingID = uniquePrefix .. "_" .. sName
+
+		if _G.SavedConfig[settingID] ~= nil then
+			default = _G.SavedConfig[settingID]
+		else
+			_G.SavedConfig[settingID] = default
+		end
+
+		local sFrame = Instance.new("Frame", settingsCont)
+		sFrame.Size = UDim2.new(1, 0, 0, 38)
+		sFrame.BackgroundTransparency = 1
+
+		local lbl = Instance.new("TextLabel", sFrame)
+		lbl.Text = "      " .. sName .. ": " .. default
+		lbl.Size = UDim2.new(1, 0, 0.6, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+		lbl.TextSize = 18
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.FontFace = Font.fromName(textFont)
+
+		local bg = Instance.new("TextButton", sFrame)
+		bg.Text = ""
+		bg.Size = UDim2.new(0.75, 0, 0.15, 0)
+		bg.Position = UDim2.new(0.125, 0, 0.65, 0)
+		bg.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		uiCorner(bg, 4)
+
+		local fill = Instance.new("Frame", bg)
+		fill.BackgroundColor3 = Color3.fromRGB(78, 173, 73)
+		fill.Size = UDim2.new((default - min)/(max - min), 0, 1, 0)
+		uiCorner(fill, 4)
+
+		mod.Values[sName] = default
+		if sCallback then sCallback(default) end
+
+		bg.MouseButton1Down:Connect(function()
+			local moveConn, releaseConn
+			moveConn = RunService.RenderStepped:Connect(function()
+				local mouseP = UserInputService:GetMouseLocation().X
+				local relative = math.clamp((mouseP - bg.AbsolutePosition.X) / bg.AbsoluteSize.X, 0, 1)
+				local val = min + ((max - min) * relative)
+
+				val = math.floor((val - min) / sStep + 0.5) * sStep + min
+				val = math.clamp(val, min, max)
+
+				fill.Size = UDim2.new(relative, 0, 1, 0)
+				lbl.Text = string.format("      %s: %.2f", sName, val)
+
+				mod.Values[sName] = val
+
+				_G.SavedConfig[settingID] = val
+				saveConfigToPC()
+
+				if sCallback then sCallback(val) end
+				if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(sName, val) end
+			end)
+			releaseConn = UserInputService.InputEnded:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					moveConn:Disconnect()
+					releaseConn:Disconnect()
+				end
+			end)
+		end)
+	end
+
+	function mod:CreateTextbox(txtName, placeholder, txtCallback)
+		local settingID = uniquePrefix .. "_" .. txtName
+		local defaultText = ""
+
+		if _G.SavedConfig[settingID] ~= nil then
+			defaultText = _G.SavedConfig[settingID]
+		else
+			_G.SavedConfig[settingID] = defaultText
+		end
+
+		mod.Values[txtName] = defaultText
+
+		local tFrame = Instance.new("Frame", settingsCont)
+		tFrame.Size = UDim2.new(1, 0, 0, 40)
+		tFrame.BackgroundTransparency = 1
+
+		local lbl = Instance.new("TextLabel", tFrame)
+		lbl.Text = "      " .. txtName
+		lbl.Size = UDim2.new(0.4, 0, 1, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+		lbl.TextSize = 18
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.FontFace = Font.fromName(textFont)
+
+		local box = Instance.new("TextBox", tFrame)
+		box.Size = UDim2.new(0.45, 0, 0.6, 0)
+		box.Position = UDim2.new(0.45, 0, 0.2, 0)
+		box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		box.TextColor3 = Color3.new(1,1,1)
+		box.PlaceholderText = placeholder
+		box.Text = defaultText
+		box.TextScaled = true
+		box.FontFace = Font.fromName(textFont)
+		uiCorner(box, 4)
+
+		if txtCallback and defaultText ~= "" then txtCallback(defaultText) end
+
+		box.FocusLost:Connect(function()
+			mod.Values[txtName] = box.Text
+
+			_G.SavedConfig[settingID] = box.Text
+			saveConfigToPC()
+
+			if txtCallback then txtCallback(box.Text) end
+			if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(txtName, box.Text) end
+		end)
+	end
+
+	function mod:CreateDropdown(dName, options, default, dCallback, multiSelect)
+		multiSelect = multiSelect or false
+		local settingID = uniquePrefix .. "_" .. dName
+
+		if _G.SavedConfig[settingID] ~= nil then
+			default = _G.SavedConfig[settingID]
+		else
+			_G.SavedConfig[settingID] = default
+		end
+
+		if multiSelect then
+			if type(default) == "table" then
+				mod.Values[dName] = {}
+				for _, v in ipairs(default) do table.insert(mod.Values[dName], v) end
+			else
+				mod.Values[dName] = default and {default} or {}
+			end
+		else
+			mod.Values[dName] = default
+		end
+
+		local dropCont = Instance.new("Frame", settingsCont)
+		dropCont.BackgroundTransparency = 1
+		dropCont.AutomaticSize = Enum.AutomaticSize.Y
+		dropCont.Size = UDim2.new(1, 0, 0, 0)
+		local dLayout = Instance.new("UIListLayout", dropCont)
+		dLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+		local dBtn = Instance.new("TextButton", dropCont)
+		dBtn.Size = UDim2.new(1, 0, 0, 28)
+		dBtn.BackgroundTransparency = 1
+		dBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+		dBtn.TextXAlignment = Enum.TextXAlignment.Left
+		dBtn.TextSize = 20
+		dBtn.FontFace = Font.fromName(textFont)
+		dBtn.LayoutOrder = 1
+
+		local optFrame = Instance.new("Frame", dropCont)
+		optFrame.BackgroundTransparency = 1
+		optFrame.AutomaticSize = Enum.AutomaticSize.Y
+		optFrame.Size = UDim2.new(1, 0, 0, 0)
+		optFrame.Visible = false
+		optFrame.LayoutOrder = 2
+
+		local oLayout = Instance.new("UIListLayout", optFrame)
+
+		dBtn.MouseButton1Click:Connect(function() 
+			optFrame.Visible = not optFrame.Visible 
+		end)
+
+		local function updateDropdownText()
+			if multiSelect then
+				local count = #mod.Values[dName]
+				if count == 0 then
+					dBtn.Text = "      - " .. dName .. ": None"
+				elseif count == 1 then
+					dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName][1])
+				else
+					dBtn.Text = "      - " .. dName .. ": [" .. count .. " Selected]"
+				end
+			else
+				dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName])
+			end
+		end
+
+		updateDropdownText() 
+		if dCallback then dCallback(mod.Values[dName]) end
+
+		for _, opt in ipairs(options) do
+			local oBtn = Instance.new("TextButton", optFrame)
+			oBtn.Size = UDim2.new(1, 0, 0, 24)
+			oBtn.BackgroundTransparency = 1
+			oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
+			oBtn.TextXAlignment = Enum.TextXAlignment.Left
+			oBtn.TextSize = 18
+			oBtn.FontFace = Font.fromName(textFont)
+
+			local function updateVisual()
+				if multiSelect then
+					local isSelected = table.find(mod.Values[dName], opt)
+					oBtn.Text = (isSelected and "         > [x] " or "         > [ ] ") .. tostring(opt)
+					oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
+				else
+					oBtn.Text = "         > " .. tostring(opt)
+				end
+			end
+
+			updateVisual() 
+
+			oBtn.MouseEnter:Connect(function() 
+				tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
+			end)
+
+			oBtn.MouseLeave:Connect(function() 
+				if multiSelect and table.find(mod.Values[dName], opt) then return end
+				tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
+			end)
+
+			oBtn.MouseButton1Click:Connect(function()
+				if multiSelect then
+					local foundIdx = table.find(mod.Values[dName], opt)
+					if foundIdx then
+						table.remove(mod.Values[dName], foundIdx)
+					else
+						table.insert(mod.Values[dName], opt)
 					end
 
-					function mod:CreateToggle(tName, default, tCallback)
-						local settingID = uniquePrefix .. "_" .. tName
-
-						if _G.SavedConfig[settingID] ~= nil then
-							default = _G.SavedConfig[settingID]
-						else
-							_G.SavedConfig[settingID] = default
-						end
-
-						mod.Values[tName] = default 
-
-						local tFrame = Instance.new("TextButton", settingsCont)
-						tFrame.Size = UDim2.new(1, 0, 0, 28)
-						tFrame.BackgroundTransparency = 1
-						tFrame.Text = "      - " .. tName
-						tFrame.TextColor3 = default and Color3.fromRGB(78, 173, 73) or Color3.fromRGB(180, 180, 180)
-						tFrame.TextSize = 20
-						tFrame.TextXAlignment = Enum.TextXAlignment.Left
-						tFrame.FontFace = Font.fromName(textFont)
-
-						local toggledState = default
-
-						if tCallback then tCallback(toggledState) end
-
-						tFrame.MouseButton1Click:Connect(function()
-							toggledState = not toggledState
-							tFrame.TextColor3 = toggledState and Color3.fromRGB(78, 173, 73) or Color3.fromRGB(180, 180, 180)
-							mod.Values[tName] = toggledState
-
-							_G.SavedConfig[settingID] = toggledState
-							saveConfigToPC()
-
-							if tCallback then tCallback(toggledState) end
-							if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(tName, toggledState) end
-						end)
-					end
-
-					function mod:CreateSlider(sName, min, max, default, sCallback, sStep)
-						sStep = sStep or 0.01
-						local settingID = uniquePrefix .. "_" .. sName
-
-						if _G.SavedConfig[settingID] ~= nil then
-							default = _G.SavedConfig[settingID]
-						else
-							_G.SavedConfig[settingID] = default
-						end
-
-						local sFrame = Instance.new("Frame", settingsCont)
-						sFrame.Size = UDim2.new(1, 0, 0, 38)
-						sFrame.BackgroundTransparency = 1
-
-						local lbl = Instance.new("TextLabel", sFrame)
-						lbl.Text = "      " .. sName .. ": " .. default
-						lbl.Size = UDim2.new(1, 0, 0.6, 0)
-						lbl.BackgroundTransparency = 1
-						lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
-						lbl.TextSize = 18
-						lbl.TextXAlignment = Enum.TextXAlignment.Left
-						lbl.FontFace = Font.fromName(textFont)
-
-						local bg = Instance.new("TextButton", sFrame)
-						bg.Text = ""
-						bg.Size = UDim2.new(0.75, 0, 0.15, 0)
-						bg.Position = UDim2.new(0.125, 0, 0.65, 0)
-						bg.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-						uiCorner(bg, 4)
-
-						local fill = Instance.new("Frame", bg)
-						fill.BackgroundColor3 = Color3.fromRGB(78, 173, 73)
-						fill.Size = UDim2.new((default - min)/(max - min), 0, 1, 0)
-						uiCorner(fill, 4)
-
-						mod.Values[sName] = default
-						if sCallback then sCallback(default) end
-
-						bg.MouseButton1Down:Connect(function()
-							local moveConn, releaseConn
-							moveConn = RunService.RenderStepped:Connect(function()
-								local mouseP = UserInputService:GetMouseLocation().X
-								local relative = math.clamp((mouseP - bg.AbsolutePosition.X) / bg.AbsoluteSize.X, 0, 1)
-								local val = min + ((max - min) * relative)
-
-								val = math.floor((val - min) / sStep + 0.5) * sStep + min
-								val = math.clamp(val, min, max)
-
-								fill.Size = UDim2.new(relative, 0, 1, 0)
-								lbl.Text = string.format("      %s: %.2f", sName, val)
-
-								mod.Values[sName] = val
-
-								_G.SavedConfig[settingID] = val
-								saveConfigToPC()
-
-								if sCallback then sCallback(val) end
-								if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(sName, val) end
-							end)
-							releaseConn = UserInputService.InputEnded:Connect(function(input)
-								if input.UserInputType == Enum.UserInputType.MouseButton1 then
-									moveConn:Disconnect()
-									releaseConn:Disconnect()
-								end
-							end)
-						end)
-					end
-
-					function mod:CreateTextbox(txtName, placeholder, txtCallback)
-						local settingID = uniquePrefix .. "_" .. txtName
-						local defaultText = ""
-
-						if _G.SavedConfig[settingID] ~= nil then
-							defaultText = _G.SavedConfig[settingID]
-						else
-							_G.SavedConfig[settingID] = defaultText
-						end
-
-						mod.Values[txtName] = defaultText
-
-						local tFrame = Instance.new("Frame", settingsCont)
-						tFrame.Size = UDim2.new(1, 0, 0, 40)
-						tFrame.BackgroundTransparency = 1
-
-						local lbl = Instance.new("TextLabel", tFrame)
-						lbl.Text = "      " .. txtName
-						lbl.Size = UDim2.new(0.4, 0, 1, 0)
-						lbl.BackgroundTransparency = 1
-						lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
-						lbl.TextSize = 18
-						lbl.TextXAlignment = Enum.TextXAlignment.Left
-						lbl.FontFace = Font.fromName(textFont)
-
-						local box = Instance.new("TextBox", tFrame)
-						box.Size = UDim2.new(0.45, 0, 0.6, 0)
-						box.Position = UDim2.new(0.45, 0, 0.2, 0)
-						box.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-						box.TextColor3 = Color3.new(1,1,1)
-						box.PlaceholderText = placeholder
-						box.Text = defaultText
-						box.TextScaled = true
-						box.FontFace = Font.fromName(textFont)
-						uiCorner(box, 4)
-
-						if txtCallback and defaultText ~= "" then txtCallback(defaultText) end
-
-						box.FocusLost:Connect(function()
-							mod.Values[txtName] = box.Text
-
-							_G.SavedConfig[settingID] = box.Text
-							saveConfigToPC()
-
-							if txtCallback then txtCallback(box.Text) end
-							if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(txtName, box.Text) end
-						end)
-					end
-
-					function mod:CreateDropdown(dName, options, default, dCallback, multiSelect)
-						multiSelect = multiSelect or false
-						local settingID = uniquePrefix .. "_" .. dName
-
-						if _G.SavedConfig[settingID] ~= nil then
-							default = _G.SavedConfig[settingID]
-						else
-							_G.SavedConfig[settingID] = default
-						end
-
-						if multiSelect then
-							if type(default) == "table" then
-								mod.Values[dName] = {}
-								for _, v in ipairs(default) do table.insert(mod.Values[dName], v) end
-							else
-								mod.Values[dName] = default and {default} or {}
-							end
-						else
-							mod.Values[dName] = default
-						end
-
-						local dropCont = Instance.new("Frame", settingsCont)
-						dropCont.BackgroundTransparency = 1
-						dropCont.AutomaticSize = Enum.AutomaticSize.Y
-						dropCont.Size = UDim2.new(1, 0, 0, 0)
-						local dLayout = Instance.new("UIListLayout", dropCont)
-						dLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-						local dBtn = Instance.new("TextButton", dropCont)
-						dBtn.Size = UDim2.new(1, 0, 0, 28)
-						dBtn.BackgroundTransparency = 1
-						dBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
-						dBtn.TextXAlignment = Enum.TextXAlignment.Left
-						dBtn.TextSize = 20
-						dBtn.FontFace = Font.fromName(textFont)
-						dBtn.LayoutOrder = 1
-
-						local optFrame = Instance.new("Frame", dropCont)
-						optFrame.BackgroundTransparency = 1
-						optFrame.AutomaticSize = Enum.AutomaticSize.Y
-						optFrame.Size = UDim2.new(1, 0, 0, 0)
-						optFrame.Visible = false
-						optFrame.LayoutOrder = 2
-
-						local oLayout = Instance.new("UIListLayout", optFrame)
-
-						dBtn.MouseButton1Click:Connect(function() 
-							optFrame.Visible = not optFrame.Visible 
-						end)
-
-						local function updateDropdownText()
-							if multiSelect then
-								local count = #mod.Values[dName]
-								if count == 0 then
-									dBtn.Text = "      - " .. dName .. ": None"
-								elseif count == 1 then
-									dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName][1])
-								else
-									dBtn.Text = "      - " .. dName .. ": [" .. count .. " Selected]"
-								end
-							else
-								dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName])
-							end
-						end
-
-						updateDropdownText() 
-						if dCallback then dCallback(mod.Values[dName]) end
-
-						for _, opt in ipairs(options) do
-							local oBtn = Instance.new("TextButton", optFrame)
-							oBtn.Size = UDim2.new(1, 0, 0, 24)
-							oBtn.BackgroundTransparency = 1
-							oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
-							oBtn.TextXAlignment = Enum.TextXAlignment.Left
-							oBtn.TextSize = 18
-							oBtn.FontFace = Font.fromName(textFont)
-
-							local function updateVisual()
-								if multiSelect then
-									local isSelected = table.find(mod.Values[dName], opt)
-									oBtn.Text = (isSelected and "         > [x] " or "         > [ ] ") .. tostring(opt)
-									oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
-								else
-									oBtn.Text = "         > " .. tostring(opt)
-								end
-							end
-
-							updateVisual() 
-
-							oBtn.MouseEnter:Connect(function() 
-								tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
-							end)
-
-							oBtn.MouseLeave:Connect(function() 
-								if multiSelect and table.find(mod.Values[dName], opt) then return end
-								tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
-							end)
-
-							oBtn.MouseButton1Click:Connect(function()
-								if multiSelect then
-									local foundIdx = table.find(mod.Values[dName], opt)
-									if foundIdx then
-										table.remove(mod.Values[dName], foundIdx)
-									else
-										table.insert(mod.Values[dName], opt)
-									end
-
-									updateVisual()
-									updateDropdownText()
-
-									_G.SavedConfig[settingID] = mod.Values[dName]
-									saveConfigToPC()
-
-									if dCallback then dCallback(mod.Values[dName]) end
-									if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
-								else
-									optFrame.Visible = false
-									mod.Values[dName] = opt
-
-									updateDropdownText()
-
-									_G.SavedConfig[settingID] = opt
-									saveConfigToPC()
-
-									if dCallback then dCallback(opt) end
-									if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
-								end
-							end)
-						end
-					end
-
-					function mod:CreateKeybind(kName, defaultKey, kCallback)
-						local settingID = uniquePrefix .. "_" .. kName
-
-						if _G.SavedConfig[settingID] ~= nil then
-							local savedEnumName = _G.SavedConfig[settingID]
-							defaultKey = savedEnumName and Enum.KeyCode[savedEnumName] or nil
-						else
-							_G.SavedConfig[settingID] = defaultKey and defaultKey.Name or nil
-						end
-
-						local kBtn = Instance.new("TextButton", settingsCont)
-						kBtn.Size = UDim2.new(1, 0, 0, 28)
-						kBtn.BackgroundTransparency = 1
-						local keyString = defaultKey and defaultKey.Name or "None"
-						kBtn.Text = "      - " .. kName .. ": [" .. keyString .. "]"
-						kBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
-						kBtn.TextXAlignment = Enum.TextXAlignment.Left
-						kBtn.TextSize = 20
-						kBtn.FontFace = Font.fromName(textFont)
-
-						if kCallback then kCallback(defaultKey) end
-
-						local waiting = false
-						kBtn.MouseButton1Click:Connect(function()
-							waiting = true
-							kBtn.Text = "      - " .. kName .. ": [...]"
-							kBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-						end)
-
-						UserInputService.InputBegan:Connect(function(input, GPE)
-							if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
-								waiting = false
-								local key = input.KeyCode
-								if key == Enum.KeyCode.Backspace then key = nil end
-
-								kBtn.Text = "      - " .. kName .. ": [" .. (key and key.Name or "None") .. "]"
-								kBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
-
-								_G.SavedConfig[settingID] = key and key.Name or nil
-								saveConfigToPC()
-
-								if kCallback then kCallback(key) end
-							end
-						end)
-					end
-
-					function mod:CreateColorPicker(cName, defaultColor, cCallback)
-						local settingID = uniquePrefix .. "_" .. cName
-
-						if _G.SavedConfig[settingID] ~= nil then
-							local savedRGB = _G.SavedConfig[settingID]
-							defaultColor = Color3.fromRGB(savedRGB.R, savedRGB.G, savedRGB.B)
-						else
-							_G.SavedConfig[settingID] = {R = math.floor(defaultColor.R * 255), G = math.floor(defaultColor.G * 255), B = math.floor(defaultColor.B * 255)}
-						end
-
-						local cFrame = Instance.new("Frame", settingsCont)
-						cFrame.Size = UDim2.new(1, 0, 0, 45)
-						cFrame.BackgroundTransparency = 1
-
-						local lbl = Instance.new("TextLabel", cFrame)
-						lbl.Text = "      " .. cName
-						lbl.Size = UDim2.new(0.5, 0, 1, 0)
-						lbl.BackgroundTransparency = 1
-						lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
-						lbl.TextSize = 18
-						lbl.TextXAlignment = Enum.TextXAlignment.Left
-						lbl.FontFace = Font.fromName(textFont)
-
-						local rSlider = Instance.new("TextBox", cFrame)
-						rSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
-						rSlider.Position = UDim2.new(0.5, 0, 0.25, 0)
-						rSlider.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-						rSlider.TextColor3 = Color3.new(1,1,1)
-						rSlider.Text = tostring(math.floor(defaultColor.R * 255))
-						uiCorner(rSlider, 4)
-
-						local gSlider = Instance.new("TextBox", cFrame)
-						gSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
-						gSlider.Position = UDim2.new(0.65, 0, 0.25, 0)
-						gSlider.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
-						gSlider.TextColor3 = Color3.new(1,1,1)
-						gSlider.Text = tostring(math.floor(defaultColor.G * 255))
-						uiCorner(gSlider, 4)
-
-						local bSlider = Instance.new("TextBox", cFrame)
-						bSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
-						bSlider.Position = UDim2.new(0.8, 0, 0.25, 0)
-						bSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
-						bSlider.TextColor3 = Color3.new(1,1,1)
-						bSlider.Text = tostring(math.floor(defaultColor.B * 255))
-						uiCorner(bSlider, 4)
-
-						if cCallback then cCallback(defaultColor) end
-
-						local function updateColor()
-							local r = math.clamp(tonumber(rSlider.Text) or 255, 0, 255)
-							local g = math.clamp(tonumber(gSlider.Text) or 255, 0, 255)
-							local b = math.clamp(tonumber(bSlider.Text) or 255, 0, 255)
-							rSlider.Text, gSlider.Text, bSlider.Text = tostring(r), tostring(g), tostring(b)
-
-							_G.SavedConfig[settingID] = {R = r, G = g, B = b}
-							saveConfigToPC()
-
-							if cCallback then cCallback(Color3.fromRGB(r, g, b)) end
-						end
-
-						rSlider.FocusLost:Connect(updateColor)
-						gSlider.FocusLost:Connect(updateColor)
-						bSlider.FocusLost:Connect(updateColor)
-					end
+					updateVisual()
+					updateDropdownText()
+
+					_G.SavedConfig[settingID] = mod.Values[dName]
+					saveConfigToPC()
+
+					if dCallback then dCallback(mod.Values[dName]) end
+					if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
+				else
+					optFrame.Visible = false
+					mod.Values[dName] = opt
+
+					updateDropdownText()
+
+					_G.SavedConfig[settingID] = opt
+					saveConfigToPC()
+
+					if dCallback then dCallback(opt) end
+					if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
+				end
+			end)
+		end
+	end
+
+	function mod:CreateKeybind(kName, defaultKey, kCallback)
+		local settingID = uniquePrefix .. "_" .. kName
+
+		if _G.SavedConfig[settingID] ~= nil then
+			local savedEnumName = _G.SavedConfig[settingID]
+			defaultKey = savedEnumName and Enum.KeyCode[savedEnumName] or nil
+		else
+			_G.SavedConfig[settingID] = defaultKey and defaultKey.Name or nil
+		end
+
+		local kBtn = Instance.new("TextButton", settingsCont)
+		kBtn.Size = UDim2.new(1, 0, 0, 28)
+		kBtn.BackgroundTransparency = 1
+		local keyString = defaultKey and defaultKey.Name or "None"
+		kBtn.Text = "      - " .. kName .. ": [" .. keyString .. "]"
+		kBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+		kBtn.TextXAlignment = Enum.TextXAlignment.Left
+		kBtn.TextSize = 20
+		kBtn.FontFace = Font.fromName(textFont)
+
+		if kCallback then kCallback(defaultKey) end
+
+		local waiting = false
+		kBtn.MouseButton1Click:Connect(function()
+			waiting = true
+			_G.IsBindingKey = true
+			kBtn.Text = "      - " .. kName .. ": [...]"
+			kBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+		end)
+
+		UserInputService.InputBegan:Connect(function(input, GPE)
+			if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+				waiting = false
+				local key = input.KeyCode
+				if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Escape then key = nil end
+
+				kBtn.Text = "      - " .. kName .. ": [" .. (key and key.Name or "None") .. "]"
+				kBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+
+				_G.SavedConfig[settingID] = key and key.Name or nil
+				saveConfigToPC()
+
+				if kCallback then kCallback(key) end
+				task.defer(function() _G.IsBindingKey = false end)
+			end
+		end)
+	end
+
+	function mod:CreateColorPicker(cName, defaultColor, cCallback)
+		local settingID = uniquePrefix .. "_" .. cName
+
+		if _G.SavedConfig[settingID] ~= nil then
+			local savedRGB = _G.SavedConfig[settingID]
+			defaultColor = Color3.fromRGB(savedRGB.R / 255, savedRGB.G / 255, savedRGB.B / 255)
+		else
+			_G.SavedConfig[settingID] = {R = math.floor(defaultColor.R * 255), G = math.floor(defaultColor.G * 255), B = math.floor(defaultColor.B * 255)}
+		end
+
+		local cFrame = Instance.new("Frame", settingsCont)
+		cFrame.Size = UDim2.new(1, 0, 0, 45)
+		cFrame.BackgroundTransparency = 1
+
+		local lbl = Instance.new("TextLabel", cFrame)
+		lbl.Text = "      " .. cName
+		lbl.Size = UDim2.new(0.5, 0, 1, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+		lbl.TextSize = 18
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.FontFace = Font.fromName(textFont)
+
+		local rSlider = Instance.new("TextBox", cFrame)
+		rSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
+		rSlider.Position = UDim2.new(0.5, 0, 0.25, 0)
+		rSlider.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+		rSlider.TextColor3 = Color3.new(1,1,1)
+		rSlider.Text = tostring(math.floor(defaultColor.R * 255))
+		uiCorner(rSlider, 4)
+
+		local gSlider = Instance.new("TextBox", cFrame)
+		gSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
+		gSlider.Position = UDim2.new(0.65, 0, 0.25, 0)
+		gSlider.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
+		gSlider.TextColor3 = Color3.new(1,1,1)
+		gSlider.Text = tostring(math.floor(defaultColor.G * 255))
+		uiCorner(gSlider, 4)
+
+		local bSlider = Instance.new("TextBox", cFrame)
+		bSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
+		bSlider.Position = UDim2.new(0.8, 0, 0.25, 0)
+		bSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
+		bSlider.TextColor3 = Color3.new(1,1,1)
+		bSlider.Text = tostring(math.floor(defaultColor.B * 255))
+		uiCorner(bSlider, 4)
+
+		if cCallback then cCallback(defaultColor) end
+
+		local function updateColor()
+			local r = math.clamp(tonumber(rSlider.Text) or 255, 0, 255)
+			local g = math.clamp(tonumber(gSlider.Text) or 255, 0, 255)
+			local b = math.clamp(tonumber(bSlider.Text) or 255, 0, 255)
+			rSlider.Text, gSlider.Text, bSlider.Text = tostring(r), tostring(g), tostring(b)
+
+			_G.SavedConfig[settingID] = {R = r, G = g, B = b}
+			saveConfigToPC()
+
+			if cCallback then cCallback(Color3.fromRGB(r, g, b)) end
+		end
+
+		rSlider.FocusLost:Connect(updateColor)
+		gSlider.FocusLost:Connect(updateColor)
+		bSlider.FocusLost:Connect(updateColor)
+	end
 end
 
-				FW.SettingsOverlay = {
-					Values = {},
-					Callbacks = {}
-				}
-				injectElements(FW.SettingsOverlay, overlayScroll, "Overlay")
+FW.SettingsOverlay = {
+	Values = {},
+	Callbacks = {}
+}
+injectElements(FW.SettingsOverlay, overlayScroll, "Overlay")
 
-				function FW:CreateCategory(name)
-					local category = {}
+function FW:CreateCategory(name)
+	local category = {}
 
-					local catVisID = name .. "_CategoryVisibility"
-					local catPosID = name .. "_CategoryPosition"
+	local catVisID = name .. "_CategoryVisibility"
+	local catPosID = name .. "_CategoryPosition"
 
-					local catBtn = Instance.new("TextButton", mainScroll)
-					catBtn.Name = name
-					catBtn.Text = "  " .. name
-					catBtn.Size = UDim2.new(1, 0, 0, 32)
-					catBtn.BackgroundColor3 = Color3.fromRGB(39, 39, 39)
-					catBtn.BackgroundTransparency = 1
-					catBtn.TextColor3 = Color3.new(1, 1, 1)
-					catBtn.FontFace = Font.fromName(textFont)
-					catBtn.TextSize = 24
-					catBtn.TextXAlignment = Enum.TextXAlignment.Left
-					catBtn.BorderSizePixel = 0
-					catBtn.LayoutOrder = lastSort
+	local catBtn = Instance.new("TextButton", mainScroll)
+	catBtn.Name = name
+	catBtn.Text = "  " .. name
+	catBtn.Size = UDim2.new(1, 0, 0, 32)
+	catBtn.BackgroundColor3 = Color3.fromRGB(39, 39, 39)
+	catBtn.BackgroundTransparency = 1
+	catBtn.TextColor3 = Color3.new(1, 1, 1)
+	catBtn.FontFace = Font.fromName(textFont)
+	catBtn.TextSize = 24
+	catBtn.TextXAlignment = Enum.TextXAlignment.Left
+	catBtn.BorderSizePixel = 0
+	catBtn.LayoutOrder = lastSort
 
-					lastSort += 1
+	lastSort += 1
 
-					catBtn.MouseEnter:Connect(function() tween(catBtn, {BackgroundTransparency = 0}) end)
-					catBtn.MouseLeave:Connect(function() tween(catBtn, {BackgroundTransparency = 1}) end)
+	catBtn.MouseEnter:Connect(function() tween(catBtn, {BackgroundTransparency = 0}) end)
+	catBtn.MouseLeave:Connect(function() tween(catBtn, {BackgroundTransparency = 1}) end)
 
-					local savedVisibility = false
-					if _G.SavedConfig[catVisID] ~= nil then
-						savedVisibility = _G.SavedConfig[catVisID]
-					end
+	local savedVisibility = false
+	if _G.SavedConfig[catVisID] ~= nil then
+		savedVisibility = _G.SavedConfig[catVisID]
+	end
 
-					local frame = Instance.new("Frame", mainScreenUI)
-					frame.Name = name .. "Frame"
-					frame.Size = UDim2.new(0.12, 0, 0.55, 0)
+	local frame = Instance.new("Frame", mainScreenUI)
+	frame.Name = name .. "Frame"
+	frame.Size = UDim2.new(0.12, 0, 0.55, 0)
 
-					if _G.SavedConfig[catPosID] ~= nil then
-						local posData = _G.SavedConfig[catPosID]
-						frame.Position = UDim2.new(posData.XS, posData.XO, posData.YS, posData.YO)
+	if _G.SavedConfig[catPosID] ~= nil then
+		local posData = _G.SavedConfig[catPosID]
+		frame.Position = UDim2.new(posData.XS, posData.XO, posData.YS, posData.YO)
+	else
+		frame.Position = UDim2.new(0.25, 0, 0.1, 0)
+	end
+
+	frame.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+	frame.BorderSizePixel = 0
+	frame.Visible = savedVisibility
+	catBtn.TextColor3 = savedVisibility and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
+
+	uiCorner(frame, 8)
+	makeDraggable(frame)
+
+	glow:Clone().Parent = frame
+	uiStroke:Clone().Parent = frame
+
+	local fTitleFrame = titleFrame:Clone()
+	fTitleFrame.Parent = frame
+	fTitleFrame:ClearAllChildren()
+	uiCorner(fTitleFrame, 8)
+
+	local fTitleBottomHider = titleBottomHider:Clone()
+	fTitleBottomHider.Parent = fTitleFrame
+
+	local fTitle = title:Clone()
+	fTitle.Parent = fTitleFrame
+	fTitle.Text = name
+	fTitle.Position = UDim2.new(0, 15, 0, 0)
+	fTitle.Size = UDim2.new(1, -15, 1, 0)
+
+	local fScroll = Instance.new("ScrollingFrame", frame)
+	fScroll.Size = UDim2.new(1, 0, 1, -45)
+	fScroll.Position = UDim2.new(0, 0, 0, 40)
+	fScroll.BackgroundTransparency = 1
+	fScroll.ScrollBarThickness = 0
+	fScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	local fLayout = Instance.new("UIListLayout", fScroll)
+	fLayout.Padding = UDim.new(0, 2)
+
+	catBtn.MouseButton1Click:Connect(function()
+		frame.Visible = not frame.Visible
+		catBtn.TextColor3 = frame.Visible and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
+
+		_G.SavedConfig[catVisID] = frame.Visible
+		saveConfigToPC()
+	end)
+
+	frame:GetPropertyChangedSignal("Position"):Connect(function()
+		local currentPos = frame.Position
+		_G.SavedConfig[catPosID] = {
+			XS = currentPos.X.Scale,
+			XO = currentPos.X.Offset,
+			YS = currentPos.Y.Scale,
+			YO = currentPos.Y.Offset
+		}
+		saveConfigToPC()
+	end)
+
+	function category:CreateButton(btnName, callback, allowHotkey)
+		local toggleID = name .. "_" .. btnName .. "_MainToggle"
+		local hotkeyID = name .. "_" .. btnName .. "_Hotkey"
+
+		local startingToggleState = false
+		if _G.SavedConfig[toggleID] ~= nil then
+			startingToggleState = _G.SavedConfig[toggleID]
+		else
+			_G.SavedConfig[toggleID] = startingToggleState
+		end
+
+		local mod = {
+			Toggled = startingToggleState,
+			Values = {},
+			Callbacks = {}
+		}
+
+		local container = Instance.new("Frame", fScroll)
+		container.Size = UDim2.new(1, 0, 0, 32)
+		container.BackgroundTransparency = 1
+		container.AutomaticSize = Enum.AutomaticSize.Y
+		local cLayout = Instance.new("UIListLayout", container)
+		cLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+		local btn = Instance.new("TextButton", container)
+		btn.Name = btnName
+		btn.Text = "    " .. btnName
+		btn.Size = UDim2.new(1, 0, 0, 32)
+		btn.BackgroundColor3 = Color3.fromRGB(39, 39, 39)
+		btn.BackgroundTransparency = 1
+		btn.TextColor3 = startingToggleState and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
+		btn.FontFace = Font.fromName(textFont)
+		btn.TextSize = 22
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+		btn.BorderSizePixel = 0
+		btn.LayoutOrder = 1
+
+		loops[string.lower(btnName)] = startingToggleState
+
+		-- Central wrapper function to handle toggling flawlessly
+		local function setToggleState(state)
+			mod.Toggled = state
+			btn.TextColor3 = state and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
+			loops[string.lower(btnName)] = state
+
+			_G.SavedConfig[toggleID] = state
+			saveConfigToPC()
+
+			if callback then callback(state) end
+			if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(state) end
+		end
+
+		-- CRITICAL BUGFIX: Safely defers checking on startup. 
+		-- Gives your code a split-second to assign loop callbacks below before triggering them.
+		task.defer(function()
+			if startingToggleState then
+				if callback then callback(true) end
+				if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(true) end
+			end
+		end)
+
+		btn.MouseEnter:Connect(function() tween(btn, {BackgroundTransparency = 0}) end)
+		btn.MouseLeave:Connect(function() tween(btn, {BackgroundTransparency = 1}) end)
+
+		local arrow = Instance.new("TextButton", btn)
+		arrow.Text = "<b>></b>"
+		arrow.RichText = true
+		arrow.Size = UDim2.new(0, 30, 1, 0)
+		arrow.Position = UDim2.new(1, -30, 0, 0)
+		arrow.BackgroundTransparency = 1
+		arrow.TextColor3 = Color3.fromRGB(130, 130, 130)
+		arrow.FontFace = Font.fromName(textFont)
+		arrow.TextSize = 20
+
+		local currentBind = nil
+		if allowHotkey then
+			-- Load saved hotkey bind
+			if _G.SavedConfig[hotkeyID] ~= nil then
+				local savedKeyName = _G.SavedConfig[hotkeyID]
+				currentBind = savedKeyName and Enum.KeyCode[savedKeyName] or nil
+			end
+
+			local bindLabel = Instance.new("TextButton", btn)
+			bindLabel.Size = UDim2.new(0, 35, 1, 0)
+			bindLabel.Position = UDim2.new(1, -70, 0, 0)
+			bindLabel.BackgroundTransparency = 1
+			bindLabel.Text = currentBind and ("[" .. currentBind.Name .. "]") or "[ - ]"
+			bindLabel.TextColor3 = Color3.fromRGB(120, 120, 120)
+			bindLabel.FontFace = Font.fromName(textFont)
+			bindLabel.TextSize = 16
+
+			local isBinding = false
+			bindLabel.MouseButton1Click:Connect(function()
+				isBinding = true
+				_G.IsBindingKey = true
+				bindLabel.Text = "[...]"
+			end)
+
+			UserInputService.InputBegan:Connect(function(input, GPE)
+				if isBinding and input.UserInputType == Enum.UserInputType.Keyboard then
+					isBinding = false
+					local key = input.KeyCode
+					if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Escape then
+						currentBind = nil
+						_G.SavedConfig[hotkeyID] = nil
 					else
-						frame.Position = UDim2.new(0.25, 0, 0.1, 0)
+						currentBind = key
+						_G.SavedConfig[hotkeyID] = key.Name
 					end
+					bindLabel.Text = currentBind and ("[" .. currentBind.Name .. "]") or "[ - ]"
+					saveConfigToPC()
+					task.defer(function() _G.IsBindingKey = false end)
 
-					frame.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
-					frame.BorderSizePixel = 0
-					frame.Visible = savedVisibility
-					catBtn.TextColor3 = savedVisibility and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
-
-					uiCorner(frame, 8)
-					makeDraggable(frame)
-
-					glow:Clone().Parent = frame
-					uiStroke:Clone().Parent = frame
-
-					local fTitleFrame = titleFrame:Clone()
-					fTitleFrame.Parent = frame
-					fTitleFrame:ClearAllChildren()
-					uiCorner(fTitleFrame, 8)
-
-					local fTitleBottomHider = titleBottomHider:Clone()
-					fTitleBottomHider.Parent = fTitleFrame
-
-					local fTitle = title:Clone()
-					fTitle.Parent = fTitleFrame
-					fTitle.Text = name
-					fTitle.Position = UDim2.new(0, 15, 0, 0)
-					fTitle.Size = UDim2.new(1, -15, 1, 0)
-
-					local fScroll = Instance.new("ScrollingFrame", frame)
-					fScroll.Size = UDim2.new(1, 0, 1, -45)
-					fScroll.Position = UDim2.new(0, 0, 0, 40)
-					fScroll.BackgroundTransparency = 1
-					fScroll.ScrollBarThickness = 0
-					fScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-					local fLayout = Instance.new("UIListLayout", fScroll)
-					fLayout.Padding = UDim.new(0, 2)
-
-					catBtn.MouseButton1Click:Connect(function()
-						frame.Visible = not frame.Visible
-						catBtn.TextColor3 = frame.Visible and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
-
-						_G.SavedConfig[catVisID] = frame.Visible
-						saveConfigToPC()
-					end)
-
-					frame:GetPropertyChangedSignal("Position"):Connect(function()
-						local currentPos = frame.Position
-						_G.SavedConfig[catPosID] = {
-							XS = currentPos.X.Scale,
-							XO = currentPos.X.Offset,
-							YS = currentPos.Y.Scale,
-							YO = currentPos.Y.Offset
-						}
-						saveConfigToPC()
-					end)
-
-					function category:CreateButton(btnName, callback, allowHotkey)
-						local toggleID = name .. "_" .. btnName .. "_MainToggle"
-
-						local startingToggleState = false
-						if _G.SavedConfig[toggleID] ~= nil then
-							startingToggleState = _G.SavedConfig[toggleID]
-						else
-							_G.SavedConfig[toggleID] = startingToggleState
-						end
-
-						local mod = {
-							Toggled = startingToggleState,
-							Values = {},
-							Callbacks = {}
-						}
-
-						local container = Instance.new("Frame", fScroll)
-						container.Size = UDim2.new(1, 0, 0, 32)
-						container.BackgroundTransparency = 1
-						container.AutomaticSize = Enum.AutomaticSize.Y
-						local cLayout = Instance.new("UIListLayout", container)
-						cLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-						local btn = Instance.new("TextButton", container)
-						btn.Name = btnName
-						btn.Text = "    " .. btnName
-						btn.Size = UDim2.new(1, 0, 0, 32)
-						btn.BackgroundColor3 = Color3.fromRGB(39, 39, 39)
-						btn.BackgroundTransparency = 1
-						btn.TextColor3 = startingToggleState and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
-						btn.FontFace = Font.fromName(textFont)
-						btn.TextSize = 22
-						btn.TextXAlignment = Enum.TextXAlignment.Left
-						btn.BorderSizePixel = 0
-						btn.LayoutOrder = 1
-
-						loops[string.lower(btnName)] = startingToggleState
-
-		                if callback then callback(mod.Toggled) end
-		                if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(mod.Toggled) end
-
-						btn.MouseEnter:Connect(function() tween(btn, {BackgroundTransparency = 0}) end)
-						btn.MouseLeave:Connect(function() tween(btn, {BackgroundTransparency = 1}) end)
-
-						local arrow = Instance.new("TextButton", btn)
-						arrow.Text = "<b>></b>"
-						arrow.RichText = true
-						arrow.Size = UDim2.new(0, 30, 1, 0)
-						arrow.Position = UDim2.new(1, -30, 0, 0)
-						arrow.BackgroundTransparency = 1
-						arrow.TextColor3 = Color3.fromRGB(130, 130, 130)
-						arrow.FontFace = Font.fromName(textFont)
-						arrow.TextSize = 20
-
-						local currentBind = nil
-						local hotkeyID = name .. "_" .. btnName .. "_Hotkey"
-
-						if allowHotkey then
-							if _G.SavedConfig[hotkeyID] ~= nil then
-								local savedKeyName = _G.SavedConfig[hotkeyID]
-								currentBind = savedKeyName and Enum.KeyCode[savedKeyName] or nil
-							end
-
-							local bindLabel = Instance.new("TextButton", btn)
-							bindLabel.Size = UDim2.new(0, 35, 1, 0)
-							bindLabel.Position = UDim2.new(1, -70, 0, 0)
-							bindLabel.BackgroundTransparency = 1
-							bindLabel.Text = currentBind and ("[" .. currentBind.Name .. "]") or "[ - ]"
-							bindLabel.TextColor3 = Color3.fromRGB(120, 120, 120)
-							bindLabel.FontFace = Font.fromName(textFont)
-							bindLabel.TextSize = 16
-
-							local isBinding = false
-							bindLabel.MouseButton1Click:Connect(function()
-								isBinding = true
-								bindLabel.Text = "[...]"
-							end)
-
-							UserInputService.InputBegan:Connect(function(input, GPE)
-								if isBinding and input.UserInputType == Enum.UserInputType.Keyboard then
-									isBinding = false
-									local key = input.KeyCode
-									if key == Enum.KeyCode.Backspace or key == Enum.KeyCode.Escape then
-										currentBind = nil
-										bindLabel.Text = "[ - ]"
-										_G.SavedConfig[hotkeyID] = nil
-									else
-										currentBind = key
-										bindLabel.Text = "[" .. key.Name .. "]"
-										_G.SavedConfig[hotkeyID] = key.Name
-									end
-									saveConfigToPC()
-								elseif not GPE and currentBind and input.KeyCode == currentBind then
-									mod.Toggled = not mod.Toggled
-									btn.TextColor3 = mod.Toggled and Color3.fromRGB(78, 173, 73) or Color3.new(1,1,1)
-									loops[string.lower(btnName)] = mod.Toggled
-
-									_G.SavedConfig[toggleID] = mod.Toggled
-									saveConfigToPC()
-
-									if callback then callback(mod.Toggled) end
-									if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(mod.Toggled) end
-								end
-							end)
-						end
-
-						local settingsCont = Instance.new("Frame", container)
-						settingsCont.Size = UDim2.new(1, 0, 0, 0)
-						settingsCont.BackgroundTransparency = 1
-						settingsCont.Visible = false
-						settingsCont.AutomaticSize = Enum.AutomaticSize.Y
-						settingsCont.LayoutOrder = 2
-						local sLayout = Instance.new("UIListLayout", settingsCont)
-						sLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-						btn.MouseButton1Click:Connect(function()
-							mod.Toggled = not mod.Toggled
-							btn.TextColor3 = mod.Toggled and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
-							loops[string.lower(btnName)] = mod.Toggled
-
-							_G.SavedConfig[toggleID] = mod.Toggled
-							saveConfigToPC()
-
-							if callback then callback(mod.Toggled) end
-							if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(mod.Toggled) end
-						end)
-
-						arrow.MouseButton1Click:Connect(function()
-							settingsCont.Visible = not settingsCont.Visible
-							arrow.Rotation = settingsCont.Visible and 90 or 0
-						end)
-
-						injectElements(mod, settingsCont, name .. "_" .. btnName)
-
-						return mod
-					end
-
-					return category
+				elseif not GPE and not _G.IsBindingKey and currentBind and input.KeyCode == currentBind then
+					setToggleState(not mod.Toggled)
 				end
+			end)
+		end
 
+		local settingsCont = Instance.new("Frame", container)
+		settingsCont.Size = UDim2.new(1, 0, 0, 0)
+		settingsCont.BackgroundTransparency = 1
+		settingsCont.Visible = false
+		settingsCont.AutomaticSize = Enum.AutomaticSize.Y
+		settingsCont.LayoutOrder = 2
+		local sLayout = Instance.new("UIListLayout", settingsCont)
+		sLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+		btn.MouseButton1Click:Connect(function()
+			setToggleState(not mod.Toggled)
+		end)
+
+		arrow.MouseButton1Click:Connect(function()
+			settingsCont.Visible = not settingsCont.Visible
+			arrow.Rotation = settingsCont.Visible and 90 or 0
+		end)
+
+		injectElements(mod, settingsCont, name .. "_" .. btnName)
+
+		return mod
+	end
+
+	return category
+end
+
+UserInputService.InputBegan:Connect(function(input, GPE)
+	if input.KeyCode == Enum.KeyCode.RightShift and not GPE then
+		mainScreenUI.Enabled = not mainScreenUI.Enabled
+	end
+end)
 
 UserInputService.InputBegan:Connect(function(input, GPE)
 	if input.KeyCode == Enum.KeyCode.RightShift and not GPE then
@@ -2628,3 +2623,4 @@ while loops["void drop"] do
 		end
 	end
 end
+
