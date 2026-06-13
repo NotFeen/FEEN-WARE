@@ -43,7 +43,8 @@ local loops = {
 	["fast drop"] = false,
 	["auto balloon"] = false,
 	["auto pearl"] = false,
-	["void drop"] = false
+	["void drop"] = false,
+	["auto clicker"]
 }
 
 
@@ -1162,14 +1163,13 @@ function FW:CreateCategory(name)
 end
 
 UserInputService.InputBegan:Connect(function(input, GPE)
-	if input.KeyCode == Enum.KeyCode.RightShift and not GPE then
-		mainScreenUI.Enabled = not mainScreenUI.Enabled
-	end
-end)
-
-UserInputService.InputBegan:Connect(function(input, GPE)
-	if input.KeyCode == Enum.KeyCode.RightShift and not GPE then
-		mainScreenUI.Enabled = not mainScreenUI.Enabled
+	if GPE then return end
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		if mainScreenUI:IsA("ScreenGui") then
+			mainScreenUI.Enabled = not mainScreenUI.Enabled
+		else
+			mainScreenUI.Visible = not mainScreenUI.Visible
+		end
 	end
 end)
 
@@ -1229,7 +1229,8 @@ Velocity:CreateSlider("Bridge Vertical Knockback", 0, 100, 50, nil)
 
 local AutoClicker = Combat:CreateButton("Auto Clicker", nil, true)
 AutoClicker:CreateSlider("CPS", 1,40,7, nil)
-AutoClicker:CreateSlider("CDC", 1, 100, 50, nil)
+AutoClicker:CreateToggle("Block Placement", true, nil)
+AutoClicker:CreateToggle("Sword Swings", true, nil)
 AutoClicker:CreateToggle("Require Mouse Held", true, nil)
 
 local Reach = Combat:CreateButton("Reach", nil, true)
@@ -2624,3 +2625,6 @@ while loops["void drop"] do
 	end
 end
 
+AutoClicker.Callbacks.OnToggle = function(state)
+	
+end
