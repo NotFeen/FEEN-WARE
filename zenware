@@ -52,6 +52,9 @@ local loops = {
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
 
+local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
+local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
+local oldGetMouseInfo = BlockSelector.getMouseInfo
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -398,7 +401,11 @@ end
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 
-_G.NotificationConfig = {
+local NotificationSystem = {}
+
+NotificationSystem.Settings = {
+	Enabled = true,
+
 	Width = 320,
 	Height = 75,
 	Padding = 10,
@@ -411,137 +418,93 @@ _G.NotificationConfig = {
 	TitleColor = Color3.fromRGB(255,255,255),
 	TextColor = Color3.fromRGB(200,200,200),
 
-	CornerRadius = 10,
-
-	SlideTween = TweenInfo.new(
-		0.35,
-		Enum.EasingStyle.Quart,
-		Enum.EasingDirection.Out
-	),
-
-	FadeTween = TweenInfo.new(
-		0.25,
-		Enum.EasingStyle.Quad,
-		Enum.EasingDirection.In
-	)
+	SlideTween = TweenInfo.new(0.35, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+	FadeTween = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 }
 
-local NotificationGui = Instance.new("ScreenGui")
-NotificationGui.Name = "Notifications"
-NotificationGui.ResetOnSpawn = false
-NotificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-pcall(function()
-	NotificationGui.Parent = CoreGui
-end)
+local gui = Instance.new("ScreenGui")
+gui.Name = "Notifications"
+gui.ResetOnSpawn = false
+gui.Parent = CoreGui
 
-local Holder = Instance.new("Frame")
-Holder.Parent = NotificationGui
-Holder.AnchorPoint = Vector2.new(1,1)
-Holder.Position = UDim2.new(1,-15,1,-15)
-Holder.Size = UDim2.new(0,_G.NotificationConfig.Width,1,0)
-Holder.BackgroundTransparency = 1
+local holder = Instance.new("Frame")
+holder.Parent = gui
+holder.AnchorPoint = Vector2.new(1,1)
+holder.Position = UDim2.new(1,-15,1,-15)
+holder.Size = UDim2.new(0,320,1,0)
+holder.BackgroundTransparency = 1
 
-local Layout = Instance.new("UIListLayout")
-Layout.Parent = Holder
-Layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-Layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-Layout.SortOrder = Enum.SortOrder.LayoutOrder
-Layout.Padding = UDim.new(0,_G.NotificationConfig.Padding)
+local layout = Instance.new("UIListLayout")
+layout.Parent = holder
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0,10)
 
-function Notify(title, text, duration)
-	duration = duration or _G.NotificationConfig.Lifetime
+function NotificationSystem.Notify(title, text, duration)
+	local cfg = NotificationSystem.Settings
 
-	local Frame = Instance.new("Frame")
-	Frame.Size = UDim2.new(0,_G.NotificationConfig.Width,0,_G.NotificationConfig.Height)
-	Frame.BackgroundColor3 = _G.NotificationConfig.BackgroundColor
-	Frame.BorderSizePixel = 0
-	Frame.BackgroundTransparency = 0
-	Frame.Parent = Holder
+	if not cfg.Enabled then return end
 
-	local Corner = Instance.new("UICorner")
-	Corner.CornerRadius = UDim.new(0,_G.NotificationConfig.CornerRadius)
-	Corner.Parent = Frame
+	duration = duration or cfg.Lifetime
 
-	local Stroke = Instance.new("UIStroke")
-	Stroke.Color = Color3.fromRGB(35,35,35)
-	Stroke.Thickness = 1
-	Stroke.Parent = Frame
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(0, cfg.Width, 0, cfg.Height)
+	frame.BackgroundColor3 = cfg.BackgroundColor
+	frame.BorderSizePixel = 0
+	frame.Parent = holder
 
-	local Accent = Instance.new("Frame")
-	Accent.Size = UDim2.new(0,4,1,0)
-	Accent.BackgroundColor3 = _G.NotificationConfig.AccentColor
-	Accent.BorderSizePixel = 0
-	Accent.Parent = Frame
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0,10)
+	corner.Parent = frame
 
-	local AccentCorner = Instance.new("UICorner")
-	AccentCorner.CornerRadius = UDim.new(0,_G.NotificationConfig.CornerRadius)
-	AccentCorner.Parent = Accent
+	local titleLbl = Instance.new("TextLabel")
+	titleLbl.Parent = frame
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Position = UDim2.new(0,12,0,6)
+	titleLbl.Size = UDim2.new(1,-20,0,20)
+	titleLbl.Text = tostring(title)
+	titleLbl.TextColor3 = cfg.TitleColor
+	titleLbl.Font = Enum.Font.GothamBold
+	titleLbl.TextSize = 16
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-	local Title = Instance.new("TextLabel")
-	Title.Parent = Frame
-	Title.BackgroundTransparency = 1
-	Title.Position = UDim2.new(0,14,0,8)
-	Title.Size = UDim2.new(1,-20,0,20)
-	Title.Text = tostring(title)
-	Title.TextXAlignment = Enum.TextXAlignment.Left
-	Title.Font = Enum.Font.GothamBold
-	Title.TextSize = 16
-	Title.TextColor3 = _G.NotificationConfig.TitleColor
+	local textLbl = Instance.new("TextLabel")
+	textLbl.Parent = frame
+	textLbl.BackgroundTransparency = 1
+	textLbl.Position = UDim2.new(0,12,0,28)
+	textLbl.Size = UDim2.new(1,-20,1,-30)
+	textLbl.Text = tostring(text)
+	textLbl.TextColor3 = cfg.TextColor
+	textLbl.Font = Enum.Font.Gotham
+	textLbl.TextSize = 14
+	textLbl.TextWrapped = true
+	textLbl.TextXAlignment = Enum.TextXAlignment.Left
 
-	local Text = Instance.new("TextLabel")
-	Text.Parent = Frame
-	Text.BackgroundTransparency = 1
-	Text.Position = UDim2.new(0,14,0,30)
-	Text.Size = UDim2.new(1,-20,1,-35)
-	Text.Text = tostring(text)
-	Text.TextWrapped = true
-	Text.TextXAlignment = Enum.TextXAlignment.Left
-	Text.TextYAlignment = Enum.TextYAlignment.Top
-	Text.Font = Enum.Font.Gotham
-	Text.TextSize = 14
-	Text.TextColor3 = _G.NotificationConfig.TextColor
+	frame.Position = UDim2.new(1,400,0,0)
 
-	Frame.Position = UDim2.new(1,400,0,0)
+	TweenService:Create(frame, cfg.SlideTween, {
+		Position = UDim2.new(0,0,0,0)
+	}):Play()
 
-	TweenService:Create(
-		Frame,
-		_G.NotificationConfig.SlideTween,
-		{
-			Position = UDim2.new(0,0,0,0)
-		}
-	):Play()
+	task.delay(duration, function()
+		local tween = TweenService:Create(frame, cfg.FadeTween, {
+			BackgroundTransparency = 1,
+			Position = UDim2.new(1,400,0,0)
+		})
 
-	task.delay(duration,function()
+		tween:Play()
 
-		local fade = TweenService:Create(
-			Frame,
-			_G.NotificationConfig.FadeTween,
-			{
-				BackgroundTransparency = 1,
-				Position = UDim2.new(1,400,0,0)
-			}
-		)
-
-		fade:Play()
-
-		for _,obj in ipairs(Frame:GetDescendants()) do
-			if obj:IsA("TextLabel") then
-				TweenService:Create(
-					obj,
-					_G.NotificationConfig.FadeTween,
-					{TextTransparency = 1}
-				):Play()
-			elseif obj:IsA("Frame") then
-				TweenService:Create(
-					obj,
-					_G.NotificationConfig.FadeTween,
-					{BackgroundTransparency = 1}
-				):Play()
+		for _,v in ipairs(frame:GetDescendants()) do
+			if v:IsA("TextLabel") then
+				TweenService:Create(v, cfg.FadeTween, {
+					TextTransparency = 1
+				}):Play()
 			end
 		end
 
-		fade.Completed:Wait()
-		Frame:Destroy()
+		tween.Completed:Wait()
+		frame:Destroy()
 	end)
 end
 
@@ -1263,7 +1226,7 @@ function FW:CreateCategory(name)
 			if callback then callback(state) end
 			if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(state) end
 
-			Notify(
+			NotificationSystem.Notify(
 				btnName,
 				state and "Toggled On" or "Toggled Off",
 				2
@@ -1389,8 +1352,9 @@ end)
 
 -------------------------------------------------------------------------
 
-FW.SettingsOverlay:CreateLabel("Global Settings")
-FW.SettingsOverlay:CreateToggle("Notifications", true, nil)
+FW.SettingsOverlay:CreateToggle("Notifications", true, function(val)
+	NotificationSystem.Settings.Enabled = val
+end)
 
 local Combat = FW:CreateCategory("Combat")
 local Visuals = FW:CreateCategory("Visuals")
@@ -2977,6 +2941,30 @@ BlockCPSBypass.Callbacks.OnToggle = function(state)
 		cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
 	else
 		cps.BLOCK_PLACE_CPS = 12
+	end
+end
+
+
+
+Reach.Callbacks.OnToggle = function(state)
+	loops["reach"] = state
+	
+	if state then
+		if Reach.Values["Sword"] == true then
+			CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
+		end
+		
+		if Reach.Values["Mining"] == true then
+			
+		end
+		
+		if Reach.Values["Placing"] == true then
+
+		end
+	end
+	
+	if not state then
+		CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
 	end
 end
 
