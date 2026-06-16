@@ -1,3 +1,6 @@
+print("script started")
+
+
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -17,6 +20,9 @@ if readfile and pcall(function() return readfile(FILE_NAME) end) then
 		print("[AutoSave] Successfully loaded configuration from PC.")
 	end
 end
+
+print("script started x 2")
+
 
 -- Universal function to save the config to your PC
 local function saveConfigToPC()
@@ -260,6 +266,7 @@ local function getHoverColor(color)
 	local h, s, v = color:ToHSV()
 	if v > 0.8 then return Color3.fromHSV(h, s, v * 0.85) else return Color3.fromHSV(h, s, math.clamp(v * 1.25, 0, 1)) end
 end
+print("script started")
 
 local function applyHoverEffect(guiObject)
 	if guiObject:IsA("GuiButton") then guiObject.AutoButtonColor = false end
