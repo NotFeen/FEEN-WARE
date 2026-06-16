@@ -52,9 +52,6 @@ local loops = {
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
 
-local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
-local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
-local oldGetMouseInfo = BlockSelector.getMouseInfo
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -1393,8 +1390,7 @@ end)
 -------------------------------------------------------------------------
 
 FW.SettingsOverlay:CreateLabel("Global Settings")
-FW.SettingsOverlay:CreateToggle("Show Watermark", true, function(state) end)
-FW.SettingsOverlay:CreateColorPicker("Theme Color", Color3.fromRGB(78, 173, 73), function(col) end)
+FW.SettingsOverlay:CreateToggle("Notifications", true, nil)
 
 local Combat = FW:CreateCategory("Combat")
 local Visuals = FW:CreateCategory("Visuals")
@@ -2981,30 +2977,6 @@ BlockCPSBypass.Callbacks.OnToggle = function(state)
 		cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
 	else
 		cps.BLOCK_PLACE_CPS = 12
-	end
-end
-
-
-
-Reach.Callbacks.OnToggle = function(state)
-	loops["reach"] = state
-	
-	if state then
-		if Reach.Values["Sword"] == true then
-			CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
-		end
-		
-		if Reach.Values["Mining"] == true then
-			
-		end
-		
-		if Reach.Values["Placing"] == true then
-
-		end
-	end
-	
-	if not state then
-		CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
 	end
 end
 
