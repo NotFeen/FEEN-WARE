@@ -44,12 +44,17 @@ local loops = {
 	["auto balloon"] = false,
 	["auto pearl"] = false,
 	["void drop"] = false,
-	["auto clicker"] = false
+	["auto clicker"] = false,
+	["blockcps bypass"] = false,
+	["leave party"] = false
 }
 
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
 
+local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
+local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
+local oldGetMouseInfo = BlockSelector.getMouseInfo
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -189,6 +194,7 @@ local resetTask = nil
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SwordHitRemote = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts").net.out:WaitForChild("_NetManaged"):WaitForChild("SwordHit")
+local cps = require(ReplicatedStorage.TS["shared-constants"]).CpsConstants
 
 local netManaged = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
 local setInvItem = netManaged:WaitForChild("SetInvItem")
@@ -388,6 +394,157 @@ local function makeDraggable(frame)
 		if targetPosition then
 			frame.Position = frame.Position:Lerp(targetPosition, DRAG_SMOOTHNESS)
 		end
+	end)
+end
+
+
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+
+_G.NotificationConfig = {
+	Width = 320,
+	Height = 75,
+	Padding = 10,
+
+	Lifetime = 4,
+
+	BackgroundColor = Color3.fromRGB(18, 18, 18),
+	AccentColor = Color3.fromRGB(78, 173, 73),
+
+	TitleColor = Color3.fromRGB(255,255,255),
+	TextColor = Color3.fromRGB(200,200,200),
+
+	CornerRadius = 10,
+
+	SlideTween = TweenInfo.new(
+		0.35,
+		Enum.EasingStyle.Quart,
+		Enum.EasingDirection.Out
+	),
+
+	FadeTween = TweenInfo.new(
+		0.25,
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.In
+	)
+}
+
+local NotificationGui = Instance.new("ScreenGui")
+NotificationGui.Name = "Notifications"
+NotificationGui.ResetOnSpawn = false
+NotificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+pcall(function()
+	NotificationGui.Parent = CoreGui
+end)
+
+local Holder = Instance.new("Frame")
+Holder.Parent = NotificationGui
+Holder.AnchorPoint = Vector2.new(1,1)
+Holder.Position = UDim2.new(1,-15,1,-15)
+Holder.Size = UDim2.new(0,_G.NotificationConfig.Width,1,0)
+Holder.BackgroundTransparency = 1
+
+local Layout = Instance.new("UIListLayout")
+Layout.Parent = Holder
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+Layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+Layout.SortOrder = Enum.SortOrder.LayoutOrder
+Layout.Padding = UDim.new(0,_G.NotificationConfig.Padding)
+
+function Notify(title, text, duration)
+	duration = duration or _G.NotificationConfig.Lifetime
+
+	local Frame = Instance.new("Frame")
+	Frame.Size = UDim2.new(0,_G.NotificationConfig.Width,0,_G.NotificationConfig.Height)
+	Frame.BackgroundColor3 = _G.NotificationConfig.BackgroundColor
+	Frame.BorderSizePixel = 0
+	Frame.BackgroundTransparency = 0
+	Frame.Parent = Holder
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(0,_G.NotificationConfig.CornerRadius)
+	Corner.Parent = Frame
+
+	local Stroke = Instance.new("UIStroke")
+	Stroke.Color = Color3.fromRGB(35,35,35)
+	Stroke.Thickness = 1
+	Stroke.Parent = Frame
+
+	local Accent = Instance.new("Frame")
+	Accent.Size = UDim2.new(0,4,1,0)
+	Accent.BackgroundColor3 = _G.NotificationConfig.AccentColor
+	Accent.BorderSizePixel = 0
+	Accent.Parent = Frame
+
+	local AccentCorner = Instance.new("UICorner")
+	AccentCorner.CornerRadius = UDim.new(0,_G.NotificationConfig.CornerRadius)
+	AccentCorner.Parent = Accent
+
+	local Title = Instance.new("TextLabel")
+	Title.Parent = Frame
+	Title.BackgroundTransparency = 1
+	Title.Position = UDim2.new(0,14,0,8)
+	Title.Size = UDim2.new(1,-20,0,20)
+	Title.Text = tostring(title)
+	Title.TextXAlignment = Enum.TextXAlignment.Left
+	Title.Font = Enum.Font.GothamBold
+	Title.TextSize = 16
+	Title.TextColor3 = _G.NotificationConfig.TitleColor
+
+	local Text = Instance.new("TextLabel")
+	Text.Parent = Frame
+	Text.BackgroundTransparency = 1
+	Text.Position = UDim2.new(0,14,0,30)
+	Text.Size = UDim2.new(1,-20,1,-35)
+	Text.Text = tostring(text)
+	Text.TextWrapped = true
+	Text.TextXAlignment = Enum.TextXAlignment.Left
+	Text.TextYAlignment = Enum.TextYAlignment.Top
+	Text.Font = Enum.Font.Gotham
+	Text.TextSize = 14
+	Text.TextColor3 = _G.NotificationConfig.TextColor
+
+	Frame.Position = UDim2.new(1,400,0,0)
+
+	TweenService:Create(
+		Frame,
+		_G.NotificationConfig.SlideTween,
+		{
+			Position = UDim2.new(0,0,0,0)
+		}
+	):Play()
+
+	task.delay(duration,function()
+
+		local fade = TweenService:Create(
+			Frame,
+			_G.NotificationConfig.FadeTween,
+			{
+				BackgroundTransparency = 1,
+				Position = UDim2.new(1,400,0,0)
+			}
+		)
+
+		fade:Play()
+
+		for _,obj in ipairs(Frame:GetDescendants()) do
+			if obj:IsA("TextLabel") then
+				TweenService:Create(
+					obj,
+					_G.NotificationConfig.FadeTween,
+					{TextTransparency = 1}
+				):Play()
+			elseif obj:IsA("Frame") then
+				TweenService:Create(
+					obj,
+					_G.NotificationConfig.FadeTween,
+					{BackgroundTransparency = 1}
+				):Play()
+			end
+		end
+
+		fade.Completed:Wait()
+		Frame:Destroy()
 	end)
 end
 
@@ -1098,7 +1255,6 @@ function FW:CreateCategory(name)
 
 		loops[string.lower(btnName)] = startingToggleState
 
-		-- Central wrapper function to handle toggling flawlessly
 		local function setToggleState(state)
 			mod.Toggled = state
 			btn.TextColor3 = state and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
@@ -1109,10 +1265,14 @@ function FW:CreateCategory(name)
 
 			if callback then callback(state) end
 			if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(state) end
+
+			Notify(
+				btnName,
+				state and "Toggled On" or "Toggled Off",
+				2
+			)
 		end
 
-		-- CRITICAL BUGFIX: Safely defers checking on startup. 
-		-- Gives your code a split-second to assign loop callbacks below before triggering them.
 		task.defer(function()
 			if startingToggleState then
 				if callback then callback(true) end
@@ -1151,10 +1311,20 @@ function FW:CreateCategory(name)
 			bindLabel.TextSize = 16
 
 			local isBinding = false
-			bindLabel.MouseButton1Click:Connect(function()
-				isBinding = true
-				_G.IsBindingKey = true
-				bindLabel.Text = "[...]"
+			bindLabel.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton2 then
+					currentBind = nil
+					_G.SavedConfig[hotkeyID] = nil
+					bindLabel.Text = "[ - ]"
+					saveConfigToPC()
+					return
+				end
+
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					isBinding = true
+					_G.IsBindingKey = true
+					bindLabel.Text = "[...]"
+				end
 			end)
 
 			UserInputService.InputBegan:Connect(function(input, GPE)
@@ -1197,6 +1367,10 @@ function FW:CreateCategory(name)
 		end)
 
 		injectElements(mod, settingsCont, name .. "_" .. btnName)
+		
+		function mod:SetState(state)
+			setToggleState(state)
+		end
 
 		return mod
 	end
@@ -1276,6 +1450,14 @@ AutoClicker:CreateToggle("Sword Swings", true, nil)
 AutoClicker:CreateToggle("Require Mouse Held", true, nil)
 
 local Reach = Combat:CreateButton("Reach", nil, true)
+Reach:CreateToggle("Sword", true, nil)
+Reach:CreateToggle("Placing", true, nil)
+Reach:CreateToggle("Mining", true, nil)
+Reach:CreateSlider("Sword Reach", 1, 28, 14.8, function(val)
+	CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = val
+end, 0.25)
+Reach:CreateSlider("Mining Reach", 1, 100, 14.8, nil, 0.25)
+Reach:CreateSlider("Placing Reach", 1, 100, 14.8, nil, 0.25)
 
 local AutoShoot = Combat:CreateButton("Auto Shoot", nil, true)
 AutoShoot:CreateSlider("Range", 1, 1000, 50)
@@ -1320,7 +1502,17 @@ AutoPearl:CreateSlider("Shoot Duration", 0, 1, 0.25, nil)
 
 local VoidDrop = Utility:CreateButton("Void Drop", nil, true)
 VoidDrop:CreateSlider("Void range", 1, 250, 100, nil)
+VoidDrop:CreateToggle("During Balloons")
+VoidDrop:CreateToggle("During Whisper Fly")
 
+local LeaveParty = GameTab:CreateButton("Leave Party", nil, true)
+
+local BlockCPSBypass = GameTab:CreateButton("BlockCPS Bypass", nil, true)
+BlockCPSBypass:CreateSlider("CPS", 1, 1000, 20,function(value)
+	if loops["blockcps bypass"] then
+		cps.BLOCK_PLACE_CPS = value
+	end
+end)
 
 local function isInFOV(myHRP, targetHRP, maxAngle)
 	local forward = myHRP.CFrame.LookVector
@@ -1917,7 +2109,7 @@ local function fireProjectile(projectileName, HRP, targetPart, itemRequired, tar
 	if not targetPart or not Player.Character then return end
 
 	local targetHumanoid = target:FindFirstChild("Humanoid")
-	if not targetHumanoid or targetHumanoid.Health <= 0 then return end
+	if not targetHumanoid or targetHumanoid.Health <= 0 then return end	
 
 	local handItemName = tostring(itemRequired)
 	local speed = WeaponSpeeds[handItemName] or 150
@@ -2649,6 +2841,29 @@ end
 local function dropAllItems(iron, diamond, emerald)
 	local playerInventory = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):FindFirstChild(game.Players.LocalPlayer.Name)
 	if not playerInventory then return end
+	
+	local char = Player.Character
+	if not char then return end
+	local inflated = char:GetAttribute("InflatedBalloons")
+	
+	
+	if VoidDrop.Values["During Balloons"] == false then
+		if inflated then
+			return
+		end
+	end
+	
+	if VoidDrop.Values["During Whisper Fly"] == false then
+		for i, part in pairs(game.Workspace:GetChildren()) do
+			if part.Name == "ServerOwl" then
+				if part:GetAttribute("Target") == Player.UserId then
+					if part:GetAttribute("Status") == 2 then
+						return
+					end
+				end
+			end
+		end
+	end
 
 	if iron == true then
 		local ironItem = playerInventory:FindFirstChild("iron")
@@ -2758,3 +2973,46 @@ UserInputService.InputBegan:Connect(function(input)
 		end
 	end
 end)
+
+BlockCPSBypass.Callbacks.OnToggle = function(state)
+	loops["blockcps bypass"] = state
+
+	if state then
+		cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
+	else
+		cps.BLOCK_PLACE_CPS = 12
+	end
+end
+
+
+
+Reach.Callbacks.OnToggle = function(state)
+	loops["reach"] = state
+	
+	if state then
+		if Reach.Values["Sword"] == true then
+			CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
+		end
+		
+		if Reach.Values["Mining"] == true then
+			
+		end
+		
+		if Reach.Values["Placing"] == true then
+
+		end
+	end
+	
+	if not state then
+		CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
+	end
+end
+
+LeaveParty.Callbacks.OnToggle = function(state)
+
+	if state then
+		game:GetService("ReplicatedStorage")["events-@easy-games/lobby:shared/event/lobby-events@getEvents.Events"].leaveParty:FireServer()
+		LeaveParty.Toggled = false
+		LeaveParty:SetState(false)
+	end
+end
