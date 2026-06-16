@@ -2952,28 +2952,6 @@ end
 
 
 
-Reach.Callbacks.OnToggle = function(state)
-	loops["reach"] = state
-	
-	if state then
-		if Reach.Values["Sword"] == true then
-			CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
-		end
-		
-		if Reach.Values["Mining"] == true then
-			
-		end
-		
-		if Reach.Values["Placing"] == true then
-
-		end
-	end
-	
-	if not state then
-		CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
-	end
-end
-
 LeaveParty.Callbacks.OnToggle = function(state)
 
 	if state then
