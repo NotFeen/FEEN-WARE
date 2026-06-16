@@ -1,6 +1,3 @@
-print("script started")
-
-
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -20,9 +17,6 @@ if readfile and pcall(function() return readfile(FILE_NAME) end) then
 		print("[AutoSave] Successfully loaded configuration from PC.")
 	end
 end
-
-print("script started x 2")
-
 
 -- Universal function to save the config to your PC
 local function saveConfigToPC()
@@ -57,6 +51,7 @@ local loops = {
 
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
+
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -196,8 +191,6 @@ local resetTask = nil
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SwordHitRemote = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts").net.out:WaitForChild("_NetManaged"):WaitForChild("SwordHit")
-local cps = require(ReplicatedStorage.TS["shared-constants"]).CpsConstants
-
 local netManaged = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
 local setInvItem = netManaged:WaitForChild("SetInvItem")
 local inventoriesFolder = ReplicatedStorage:WaitForChild("Inventories")
@@ -266,7 +259,6 @@ local function getHoverColor(color)
 	local h, s, v = color:ToHSV()
 	if v > 0.8 then return Color3.fromHSV(h, s, v * 0.85) else return Color3.fromHSV(h, s, math.clamp(v * 1.25, 0, 1)) end
 end
-print("script started")
 
 local function applyHoverEffect(guiObject)
 	if guiObject:IsA("GuiButton") then guiObject.AutoButtonColor = false end
@@ -1330,7 +1322,7 @@ function FW:CreateCategory(name)
 		end)
 
 		injectElements(mod, settingsCont, name .. "_" .. btnName)
-		
+
 		function mod:SetState(state)
 			setToggleState(state)
 		end
@@ -2430,14 +2422,14 @@ RunService.Heartbeat:Connect(function()
 			end
 		end
 	end
-	
+
 	for _, npc in pairs(workspace:GetChildren()) do
 		if npc and npc:FindFirstChild("Humanoid", true) then
 			if Players:FindFirstChild(npc.Name) then continue end
-				local highlight = npc:FindFirstChild("_DamageHighlight_")
+			local highlight = npc:FindFirstChild("_DamageHighlight_")
 
-				if highlight and highlight.Enabled then
-					highlight.Enabled = false
+			if highlight and highlight.Enabled then
+				highlight.Enabled = false
 			end
 		end
 	end
@@ -2804,18 +2796,18 @@ end
 local function dropAllItems(iron, diamond, emerald)
 	local playerInventory = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):FindFirstChild(game.Players.LocalPlayer.Name)
 	if not playerInventory then return end
-	
+
 	local char = Player.Character
 	if not char then return end
 	local inflated = char:GetAttribute("InflatedBalloons")
-	
-	
+
+
 	if VoidDrop.Values["During Balloons"] == false then
 		if inflated then
 			return
 		end
 	end
-	
+
 	if VoidDrop.Values["During Whisper Fly"] == false then
 		for i, part in pairs(game.Workspace:GetChildren()) do
 			if part.Name == "ServerOwl" then
@@ -2837,11 +2829,11 @@ local function dropAllItems(iron, diamond, emerald)
 					amount = ironItem:GetAttribute("Amount")
 				}
 			}
-			
+
 			dropRemote:InvokeServer(unpack(args))
 		end
 	end
-	
+
 	if diamond == true then
 		local diamondItem = playerInventory:FindFirstChild("diamond")
 		if diamondItem then
@@ -2851,11 +2843,11 @@ local function dropAllItems(iron, diamond, emerald)
 					amount = diamondItem:GetAttribute("Amount")
 				}
 			}
-			
+
 			dropRemote:InvokeServer(unpack(diamondArgs))
 		end
 	end
-	
+
 	if emerald == true then
 		local emeraldItem = playerInventory:FindFirstChild("emerald")
 		if emeraldItem then
@@ -2865,7 +2857,7 @@ local function dropAllItems(iron, diamond, emerald)
 					amount = emeraldItem:GetAttribute("Amount")
 				}
 			}
-			
+
 			dropRemote:InvokeServer(unpack(emeraldArgs))
 		end
 	end
@@ -2936,17 +2928,6 @@ UserInputService.InputBegan:Connect(function(input)
 		end
 	end
 end)
-
-BlockCPSBypass.Callbacks.OnToggle = function(state)
-	loops["blockcps bypass"] = state
-
-	if state then
-		cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
-	else
-		cps.BLOCK_PLACE_CPS = 12
-	end
-end
-
 
 LeaveParty.Callbacks.OnToggle = function(state)
 
