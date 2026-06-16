@@ -191,8 +191,6 @@ local resetTask = nil
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SwordHitRemote = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts").net.out:WaitForChild("_NetManaged"):WaitForChild("SwordHit")
-local cps = require(ReplicatedStorage.TS["shared-constants"]).CpsConstants
-
 local netManaged = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
 local setInvItem = netManaged:WaitForChild("SetInvItem")
 local inventoriesFolder = ReplicatedStorage:WaitForChild("Inventories")
@@ -2930,17 +2928,6 @@ UserInputService.InputBegan:Connect(function(input)
 		end
 	end
 end)
-
-BlockCPSBypass.Callbacks.OnToggle = function(state)
-	loops["blockcps bypass"] = state
-
-	if state then
-		cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
-	else
-		cps.BLOCK_PLACE_CPS = 12
-	end
-end
-
 
 LeaveParty.Callbacks.OnToggle = function(state)
 
