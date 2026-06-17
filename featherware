@@ -2,6 +2,8 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
+local lastHit = os.clock()
+
 local FILE_NAME = "UI_AutoSave_Config.json"
 
 -- Master table to hold all session settings
@@ -55,7 +57,6 @@ local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_
 local lastSort = 2
 local currentKaTarget = nil
 local hitting = nil
-local lastHit = nil
 local stealChests = false
 local whiteHits = false
 local findTargetStuds = 100
@@ -190,7 +191,6 @@ local resetTask = nil
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SwordHitRemote = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts").net.out:WaitForChild("_NetManaged"):WaitForChild("SwordHit")
-local cps = require(ReplicatedStorage.TS["shared-constants"]).CpsConstants
 
 local netManaged = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
 local setInvItem = netManaged:WaitForChild("SetInvItem")
@@ -700,6 +700,12 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		sFrame.Size = UDim2.new(1, 0, 0, 38)
 		sFrame.BackgroundTransparency = 1
 
+		local sliderElement = {}
+
+		function sliderElement:SetVisible(state)
+			sFrame.Visible = state
+		end
+
 		local lbl = Instance.new("TextBox", sFrame)
 		lbl.Text = "      " .. sName .. ": " .. string.format(formatStr, default)
 		lbl.Size = UDim2.new(1, 0, 0.6, 0)
@@ -776,6 +782,9 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 				updateSliderVisual(newVal)
 			end
 		end)
+
+		-- ADD THIS LINE RIGHT HERE:
+		return sliderElement
 	end
 
 	function mod:CreateTextbox(txtName, placeholder, txtCallback)
@@ -1366,8 +1375,25 @@ local GameTab = FW:CreateCategory("Game")
 local Killaura = Combat:CreateButton("Killaura",nil, true)
 Killaura:CreateToggle("Manual Swing", false, nil)
 Killaura:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
-Killaura:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.01)
-Killaura:CreateSlider("Reach", 0, 28, 14, nil)
+local hitRegSlider = Killaura:CreateSlider("Hits per 10s", 1, 36, 34, nil, 0.5)
+local hitDelaySlider = Killaura:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
+
+hitRegSlider:SetVisible(false)
+
+Killaura:CreateToggle("Use Hit Reg Slider", false, function(val)
+	if hitDelaySlider and hitRegSlider then
+		if val then
+			hitDelaySlider:SetVisible(false)
+			hitRegSlider:SetVisible(true)
+		else
+			hitDelaySlider:SetVisible(true)
+			hitRegSlider:SetVisible(false)
+		end
+	end
+end)
+
+
+Killaura:CreateSlider("Reach", 0, 18, 14, nil)
 Killaura:CreateSlider("Angle Check", 0,360,180, nil)
 Killaura:CreateToggle("Wall Check", false, nil)
 Killaura:CreateToggle("Target Players", true, nil)
@@ -1416,7 +1442,6 @@ Reach:CreateToggle("Sword", true, nil)
 Reach:CreateToggle("Placing", true, nil)
 Reach:CreateToggle("Mining", true, nil)
 Reach:CreateSlider("Sword Reach", 1, 28, 14.8, function(val)
-	CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = val
 end, 0.25)
 Reach:CreateSlider("Mining Reach", 1, 100, 14.8, nil, 0.25)
 Reach:CreateSlider("Placing Reach", 1, 100, 14.8, nil, 0.25)
@@ -1470,11 +1495,7 @@ VoidDrop:CreateToggle("During Whisper Fly")
 local LeaveParty = GameTab:CreateButton("Leave Party", nil, true)
 
 local BlockCPSBypass = GameTab:CreateButton("BlockCPS Bypass", nil, true)
-BlockCPSBypass:CreateSlider("CPS", 1, 1000, 20,function(value)
-	if loops["blockcps bypass"] then
-		cps.BLOCK_PLACE_CPS = value
-	end
-end)
+
 
 local function isInFOV(myHRP, targetHRP, maxAngle)
 	local forward = myHRP.CFrame.LookVector
@@ -1512,9 +1533,12 @@ kaHighlight.FillTransparency = 0.5
 kaHighlight.OutlineTransparency = 0
 kaHighlight.Adornee = nil
 
-pcall(function() kaHighlight.Parent = game:GetService("CoreGui") end)
+pcall(function() 
+	kaHighlight.Parent = Player:WaitForChild("PlayerGui")
+end)
 if not kaHighlight.Parent then kaHighlight.Parent = workspace end
 Killaura.Callbacks.OnToggle = function(state)
+	
 	loops["killaura"] = state
 
 	if loops["killaura"] == false then
@@ -1525,10 +1549,28 @@ Killaura.Callbacks.OnToggle = function(state)
 
 	task.spawn(function()
 		while loops["killaura"] == true do
-			local hitDelay = Killaura.Values["Hit Delay"]
-			task.wait(fixDelay(hitDelay))
+			local hitDelay = 0
+			if Killaura.Values["Use Hit Reg Slider"] then
+				if tonumber(Killaura.Values["Hits per 10s"]) <= 34 then
+					hitDelay = 10 / tonumber(Killaura.Values["Hits per 10s"])
+				elseif tonumber(Killaura.Values["Hits per 10s"])  == 34.50 then
+					hitDelay = 0.05775
+				elseif tonumber(Killaura.Values["Hits per 10s"]) == 35 then
+						hitDelay = 0.04
+				elseif tonumber(Killaura.Values["Hits per 10s"]) == 35.50 then
+					hitDelay = 0.03
+				elseif tonumber(Killaura.Values["Hits per 10s"]) == 36 then 	
+						hitDelay = 0
+				end
+			else
+				hitDelay = Killaura.Values["Hit Delay"]
+			end
+			
+			task.wait(hitDelay)
 
-			if not (Killaura.Values["Target Players"] or Killaura.Values["Target NPCs/Dummies"]) then
+			
+			
+             if not (Killaura.Values["Target Players"] or Killaura.Values["Target NPCs/Dummies"]) then
 				currentKaTarget = nil
 				kaHighlight.Adornee = nil
 				continue
@@ -1541,6 +1583,16 @@ Killaura.Callbacks.OnToggle = function(state)
 				continue
 			end
 			local rootPart = char.HumanoidRootPart
+
+			if Killaura.Values["Check If Sophia Frozen"] then
+				if Player:GetAttribute("StunnedUntilTime") then
+					if Player:GetAttribute("StunnedUntilTime") ~= -1 then
+						currentKaTarget = nil
+						kaHighlight.Adornee = nil
+						continue
+					end
+				end
+			end
 
 			local handItem = char:WaitForChild("HandInvItem", 1) 
 			if not handItem then
@@ -1603,7 +1655,6 @@ Killaura.Callbacks.OnToggle = function(state)
 				end
 			end
 
-			-- If no valid base target exists, clear everything completely
 			if not besttarget then
 				currentKaTarget = nil
 				kaHighlight.Adornee = nil
@@ -1611,7 +1662,11 @@ Killaura.Callbacks.OnToggle = function(state)
 			end
 
 			local HRP = rootPart 
-			local targetHRP = besttarget.PrimaryPart
+			local targetHRP = besttarget:FindFirstChild("HumanoidRootPart") or besttarget.PrimaryPart
+
+			if not targetHRP then
+				continue
+			end
 			local dir = (targetHRP.Position - HRP.Position).Unit
 
 			-- WALL CHECK
@@ -1653,7 +1708,7 @@ Killaura.Callbacks.OnToggle = function(state)
 				continue
 			end
 
-			-- Weapon Selection Setup
+			-- WEAPON VALIDATION
 			local inventoryWeapon = nil
 			local swordName = nil
 			local oldItem = tostring(handItem.Value) or "hand"
@@ -1675,13 +1730,11 @@ Killaura.Callbacks.OnToggle = function(state)
 				end
 			end
 
-			-- Everything passed! NOW it is safe to set the shared target variables
 			currentKaTarget = besttarget
 			if Killaura.Values["Highlight Target"] then
 				kaHighlight.Adornee = besttarget
 			end
 
-			-- Build server validation arguments
 			local spoofedTargetPosition = targetHRP.Position
 			local maxNormalReach = 14 
 			if distance > maxNormalReach then
@@ -1700,6 +1753,14 @@ Killaura.Callbacks.OnToggle = function(state)
 					["weapon"] = inventoryWeapon
 				}
 			}
+			
+			local yCheck = math.abs(targetHRP.Position.Y - HRP.Position.Y)
+
+			if yCheck > Killaura.Values["Reach"] then
+				kaHighlight = nil
+				currentKaTarget = nil
+				continue
+			end
 
 			if Killaura.Values["Require Sword Equipped"] == false and oldItem ~= swordName then
 				local bestWeaponInst = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):WaitForChild(Player.Name):WaitForChild(swordName)
@@ -1707,21 +1768,23 @@ Killaura.Callbacks.OnToggle = function(state)
 				game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetInvItem"):InvokeServer(unpack(args))
 			end
 
-			-- Fire packet execution
-			SwordHitRemote:FireServer(unpack(kaArgs))
+				SwordHitRemote:FireServer(unpack(kaArgs))
+				hitting = true
 
-			hitting = true
-			lastHit = os.clock()
-
-			if Killaura.Values["Face Target"] == true then
-				faceTarget(rootPart.Parent, besttarget)
-			end
+				if Killaura.Values["Face Target"] == true then
+					faceTarget(rootPart.Parent, besttarget)
+				end
+			
+			
 		end
 	end)
 end
+
+-- ---------------------------------------------------
+-- INPUT DETECTION COMPONENT
+-- ---------------------------------------------------
 UserInputService.InputBegan:Connect(function(input, GPE)
 	if GPE then return end
-
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		startTime = os.clock()
 	end
@@ -1733,9 +1796,7 @@ UserInputService.InputEnded:Connect(function(input, GPE)
 		local heldTime = currentTime - startTime
 
 		if heldTime <= maxHoldTime then
-
 			local timeSinceLastClick = currentTime - lastClickTime
-
 
 			if timeSinceLastClick <= maxClickInterval then
 				if not clicking then
@@ -1743,24 +1804,21 @@ UserInputService.InputEnded:Connect(function(input, GPE)
 				end
 			end
 
-
 			lastClickTime = currentTime
 
 			if resetTask then
 				task.cancel(resetTask) 
 			end
 
-
 			resetTask = task.delay(maxClickInterval, function()
 				clicking = false
 			end)
-
 		else
-
 			clicking = false
 		end
 	end
 end)
+
 
 Player.CharacterAdded:Connect(function(character)
 	if Killaura.Toggled == true and Killaura.Values["Equip Sword Upon Death"] == true then
@@ -2936,17 +2994,27 @@ UserInputService.InputBegan:Connect(function(input)
 	end
 end)
 
-BlockCPSBypass.Callbacks.OnToggle = function(state)
-	loops["blockcps bypass"] = state
 
+
+Reach.Callbacks.OnToggle = function(state)
+	loops["reach"] = state
+	
 	if state then
-		cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
-	else
-		cps.BLOCK_PLACE_CPS = 12
+		if Reach.Values["Sword"] == true then
+		end
+		
+		if Reach.Values["Mining"] == true then
+			
+		end
+		
+		if Reach.Values["Placing"] == true then
+
+		end
+	end
+	
+	if not state then
 	end
 end
-
-
 
 LeaveParty.Callbacks.OnToggle = function(state)
 
