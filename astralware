@@ -3,7 +3,7 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local FILE_NAME = "UI_AutoSave_Config.json"
+local FILE_NAME = "UI_AutoSavee_Config.json"
 
 local takeItem = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem")
 
@@ -58,9 +58,9 @@ local loops = {
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
 
---local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
---local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
---local oldGetMouseInfo = BlockSelector.getMouseInfo
+local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
+local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
+local oldGetMouseInfo = BlockSelector.getMouseInfo
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -73,8 +73,8 @@ local maxHoldTime = 0.1
 local maxClickInterval = 0.1   
 local isSystemEnabled = false
 
---local BlockSelectorMod = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector'])
---local CombatConstantMod = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant'])
+local BlockSelectorMod = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector'])
+local CombatConstantMod = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant'])
 
 local armorTiers = {"emerald", "diamond", "iron", "leather"}
 local armorSlots = {
@@ -85,6 +85,40 @@ local armorSlots = {
 
 local currentArmorState = "unknown"
 
+
+local KnitInit, Knit
+repeat
+	KnitInit, Knit = pcall(function()
+		return require(replicatedStorage.rbxts_include.node_modules["@easy-games"].knit.src).KnitClient
+	end)
+	if KnitInit then break end
+	task.wait()
+until KnitInit
+
+-- Optional: Wait for Knit to fully start if your executor supports debug functions
+local success, isStarted = pcall(function() return debug.getupvalue(Knit.Start, 1) end)
+if success and not isStarted then
+	repeat task.wait() until debug.getupvalue(Knit.Start, 1)
+end
+
+-- 2. Create the bedwars table with ONLY your 3 required modules
+local bedwars = setmetatable({
+	Cps = require(replicatedStorage.TS["shared-constants"]).CpsConstants,
+	BlockSelector = require(replicatedStorage.rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector,
+	CombatConstant = require(replicatedStorage.TS.combat['combat-constant']).CombatConstant
+}, {
+	-- 3. The fallback: If you try to access something not in the list above, it fetches it from Knit
+	__index = function(self, ind)
+		rawset(self, ind, Knit.Controllers[ind])
+		return rawget(self, ind)
+	end
+})
+
+-- 4. Set it as a global variable so your Reach module can use it
+getgenv().bedwars = bedwars
+
+-- Access the function
+bedwars.oldGetMouseInfo = bedwars.BlockSelector.getMouseInfo
 
 local balloonEvent = game:GetService("ReplicatedStorage").rbxts_include.node_modules["@rbxts"].net.out._NetManaged.InflateBalloon
 
@@ -3149,7 +3183,7 @@ UserInputService.InputBegan:Connect(function(input)
 	end
 end)
 
---[[BlockCPSBypass.Callbacks.OnToggle = function(state)
+BlockCPSBypass.Callbacks.OnToggle = function(state)
 	loops["blockcps bypass"] = state
 
 	if state then
@@ -3161,7 +3195,7 @@ end
 
 
 
---[[Reach.Callbacks.OnToggle = function(state)
+Reach.Callbacks.OnToggle = function(state)
 	loops["reach"] = state
 
 	if state then
@@ -3181,7 +3215,7 @@ end
 	if not state then
 		bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
 	end
-end--]]
+end
 
 LeaveParty.Callbacks.OnToggle = function(state)
 
