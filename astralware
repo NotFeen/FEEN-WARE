@@ -10,6 +10,9 @@ local takeItem = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_includ
 _G.SavedConfig = {}
 _G.IsBindingKey = false 
 
+local consecutiveJumps = 0
+local lastJumpTime = 0
+
 -- Load settings from PC on startup
 if readfile and pcall(function() return readfile(FILE_NAME) end) then
 	local fileContent = readfile(FILE_NAME)
@@ -53,7 +56,8 @@ local loops = {
 	["auto queue"] = false,
 	["fake stats"] = false,
 	["emote"] = false,
-	["kaidaka"] = false
+	["kaidaka"] = false,
+	["infinite_jump"] = false
 }
 
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
@@ -1547,7 +1551,7 @@ local KaidaKa = Combat:CreateButton("KaidaKa",nil, true)
 KaidaKa:CreateToggle("Manual Swing", false, nil)
 KaidaKa:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
 KaidaKa:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
-KaidaKa:CreateSlider("Reach", 0, 32, 12.4, nil)
+KaidaKa:CreateSlider("Reach", 0, 40, 12.4, nil)
 KaidaKa:CreateSlider("Angle Check", 0,360,180, nil, 1)
 KaidaKa:CreateToggle("Wall Check", true, nil)
 KaidaKa:CreateToggle("Target Players", true, nil)
@@ -1669,6 +1673,62 @@ Gravity:CreateSlider("Amount", 0, 196.2, 100, function(value)
 	end
 end)
 local FakeStats = Visuals:CreateButton("Fake Stats", nil, true)
+
+local InfJump = Movement:CreateButton("Infinite Jump", nil, false)
+InfJump:CreateToggle("Bypass Jump Limits", true, nil)
+InfJump:CreateSlider("Jump Accel (per jump)", 0, 25, 5, nil, 0.5)
+InfJump:CreateSlider("Jump Cooldown", 0, 1, 0.1, nil, 0.01)
+
+local consecutiveJumps = 0
+local lastJumpTime = 0
+
+InfJump.Callbacks.OnToggle = function(state)
+	loops["infinite_jump"] = state
+	if not state then
+		consecutiveJumps = 0
+	end
+end
+
+RunService.Heartbeat:Connect(function()
+	if loops["infinite_jump"] == false then return end
+
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+		local char = Player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+		if hrp and humanoid and humanoid.Health > 0 then
+			local now = os.clock()
+			local cooldown = tonumber(InfJump.Values["Jump Cooldown"]) or 0.1
+
+			if now - lastJumpTime >= cooldown then
+
+				if now - lastJumpTime < (cooldown + 1.0) then
+					consecutiveJumps = consecutiveJumps + 1
+				else
+					consecutiveJumps = 0
+				end
+				lastJumpTime = now
+
+				local nativePower = humanoid.UseJumpPower and humanoid.JumpPower or 50
+				local accelPower = consecutiveJumps * tonumber(InfJump.Values["Jump Accel (per jump)"])
+				local finalPower = nativePower + accelPower
+
+				if InfJump.Values["Bypass Jump Limits"] then
+					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+				end
+
+				hrp.AssemblyLinearVelocity = Vector3.new(
+					hrp.AssemblyLinearVelocity.X, 
+					finalPower, 
+					hrp.AssemblyLinearVelocity.Z
+				)
+			end
+		end
+	else
+		consecutiveJumps = 0
+	end
+end)
 
 FakeStats:CreateTextbox("Clan", tostring(orginalClan), function(value)
 	if loops["fake stats"] then
