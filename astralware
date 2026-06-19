@@ -52,7 +52,8 @@ local loops = {
 	["gravity"] = false,
 	["auto queue"] = false,
 	["fake stats"] = false,
-	["emote"] = false
+	["emote"] = false,
+	["kaidaka"] = false
 }
 
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
@@ -101,6 +102,7 @@ local WeaponSpeeds = {
 	["whim_spellbook"] = 135,
 	["frost_staff_1"] = 100
 }
+local claws = {"summoner_claw_1", "summoner_claw_2", "summoner_claw_3", "summoner_claw_4"}
 
 local telepearlSpeed = 125
 
@@ -1529,9 +1531,9 @@ Killaura:CreateToggle("Use Hit Reg Slider", false, function(val)
 end)
 
 
-Killaura:CreateSlider("Reach", 0, 18, 14, nil)
-Killaura:CreateSlider("Angle Check", 0,360,180, nil)
-Killaura:CreateToggle("Wall Check", false, nil)
+Killaura:CreateSlider("Reach", 0, 18, 12.4, nil)
+Killaura:CreateSlider("Angle Check", 0,360,180, nil, 1)
+Killaura:CreateToggle("Wall Check", true, nil)
 Killaura:CreateToggle("Target Players", true, nil)
 Killaura:CreateToggle("Target NPCs/Dummies", false, nil)
 Killaura:CreateToggle("Face Target", false, nil)
@@ -1540,6 +1542,21 @@ Killaura:CreateToggle("Require Sword Equipped", true, nil)
 Killaura:CreateToggle("Multi Target Hit", false, nil)
 Killaura:CreateToggle("Check If Sophia Frozen", true, nil)
 Killaura:CreateToggle("Swing Animation", true, nil)
+
+local KaidaKa = Combat:CreateButton("KaidaKa",nil, true)
+KaidaKa:CreateToggle("Manual Swing", false, nil)
+KaidaKa:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
+KaidaKa:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
+KaidaKa:CreateSlider("Reach", 0, 32, 12.4, nil)
+KaidaKa:CreateSlider("Angle Check", 0,360,180, nil, 1)
+KaidaKa:CreateToggle("Wall Check", true, nil)
+KaidaKa:CreateToggle("Target Players", true, nil)
+KaidaKa:CreateToggle("Target NPCs/Dummies", false, nil)
+KaidaKa:CreateToggle("Highlight Target", false, nil)
+KaidaKa:CreateToggle("Require Claw Equipped", true, nil)
+KaidaKa:CreateToggle("Check If Sophia Frozen", true, nil)
+
+
 
 local AimAssist = Combat:CreateButton("Aim Assist",nil, true)
 AimAssist:CreateSlider("Range", 1, 150, 100, nil)
@@ -1975,9 +1992,237 @@ Killaura.Callbacks.OnToggle = function(state)
 	end)
 end
 
--- ---------------------------------------------------
--- INPUT DETECTION COMPONENT
--- ---------------------------------------------------
+KaidaKa.Callbacks.OnToggle = function(state)
+
+	loops["kaidaka"] = state
+
+	if loops["kaidaka"] == false then
+		currentKaTarget = nil
+		kaHighlight.Adornee = nil 
+		return 
+	end
+
+	local animator = Player.Character:WaitForChild("Humanoid"):WaitForChild("Animator")
+	local swingAnimation = Instance.new("Animation")
+	swingAnimation.AnimationId = "rbxassetid://18964634583"
+
+	local loadedSwingTrack = animator:LoadAnimation(swingAnimation)
+	loadedSwingTrack.Priority = Enum.AnimationPriority.Action
+	loadedSwingTrack.Looped = false
+
+	task.spawn(function()
+		while loops["kaidaka"] == true do
+			local hitDelay = KaidaKa.Values["Hit Delay"]
+			task.wait(hitDelay)
+
+			if not (KaidaKa.Values["Target Players"] or KaidaKa.Values["Target NPCs/Dummies"]) then
+				currentKaTarget = nil
+				kaHighlight.Adornee = nil
+				continue
+			end
+
+			local char = Player.Character
+			if not char or not char:FindFirstChild("HumanoidRootPart") then
+				currentKaTarget = nil
+				kaHighlight.Adornee = nil
+				continue
+			end
+			local rootPart = char.HumanoidRootPart
+
+			if KaidaKa.Values["Check If Sophia Frozen"] then
+				if Player:GetAttribute("StunnedUntilTime") then
+					if Player:GetAttribute("StunnedUntilTime") ~= -1 then
+						currentKaTarget = nil
+						kaHighlight.Adornee = nil
+						continue
+					end
+				end
+			end
+
+			local handItem = char:WaitForChild("HandInvItem", 1) 
+			if not handItem then
+				currentKaTarget = nil
+				kaHighlight.Adornee = nil
+				continue
+			end
+
+			local clawName = tostring(handItem.Value)
+
+			if KaidaKa.Values["Require Claw Equipped"] == true then
+				if not table.find(claws, clawName) then
+					currentKaTarget = nil
+					kaHighlight.Adornee = nil
+					continue
+				end
+			end 
+
+			local playertarget = nil
+			local playerdistance = findTargetStuds 
+			local npcdummytarget = nil
+			local npcdummydistance = findTargetStuds 
+			local besttarget = nil
+
+			if KaidaKa.Values["Target Players"] then
+				for _, v in pairs(Players:GetChildren()) do
+					local targetPlayer = Players:GetPlayerFromCharacter(v.Character)
+					if v ~= Player and targetPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") and targetPlayer.Team ~= Player.Team then
+						local distance = (rootPart.Position - v.Character.HumanoidRootPart.Position).Magnitude
+						if distance <= playerdistance then
+							playertarget = v.Character
+							playerdistance = distance
+						end
+					end
+				end
+			end
+
+			if KaidaKa.Values["Target NPCs/Dummies"] then
+				for _, npc in pairs(workspace:GetChildren()) do
+					if npc and npc:IsA("Model") and npc:FindFirstChild("Humanoid") and npc.PrimaryPart then
+						if not Players:GetPlayerFromCharacter(npc) then
+							local distance = (rootPart.Position - npc.PrimaryPart.Position).Magnitude
+							if distance <= npcdummydistance then
+								npcdummytarget = npc
+								npcdummydistance = distance
+							end
+						end
+					end
+				end
+			end
+
+			local priority = KaidaKa.Values["Priority"]
+			if priority == "Player" then
+				besttarget = playertarget or npcdummytarget
+			elseif priority == "NPC/Dummy" then
+				besttarget = npcdummytarget or playertarget
+			elseif priority == "Nearest" then
+				if playertarget and npcdummytarget then
+					besttarget = (playerdistance <= npcdummydistance) and playertarget or npcdummytarget
+				else
+					besttarget = playertarget or npcdummytarget
+				end
+			end
+
+			if not besttarget then
+				currentKaTarget = nil
+				kaHighlight.Adornee = nil
+				continue
+			end
+
+			local HRP = rootPart 
+			local targetHRP = besttarget:FindFirstChild("HumanoidRootPart") or besttarget.PrimaryPart
+
+			if not targetHRP then
+				continue
+			end
+
+			local dir = (targetHRP.Position - HRP.Position).Unit
+
+			if KaidaKa.Values["Wall Check"] == true then
+				local raycastParams = RaycastParams.new()
+				raycastParams.FilterDescendantsInstances = {HRP.Parent, besttarget}
+				raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+				raycastParams.IgnoreWater = true
+
+				local wallRaycast = workspace:Raycast(HRP.Position, targetHRP.Position - HRP.Position, raycastParams)
+				if wallRaycast then
+					currentKaTarget = nil
+					kaHighlight.Adornee = nil
+					continue
+				end
+			end
+
+			local angleMet = isInFOV(HRP, targetHRP, KaidaKa.Values["Angle Check"])
+			if not angleMet then
+				currentKaTarget = nil
+				kaHighlight.Adornee = nil
+				continue
+			end
+
+			local distance = (HRP.Position - targetHRP.Position).Magnitude
+			local reach = tonumber(KaidaKa.Values["Reach"])
+			if distance > reach then
+				currentKaTarget = nil
+				kaHighlight.Adornee = nil
+				continue
+			end
+
+			local inventoryClaw = nil
+			local chosenClawName = clawName
+
+			if KaidaKa.Values["Require Claw Equipped"] == true then
+				inventoryClaw = game.ReplicatedStorage:FindFirstChild("Inventories"):FindFirstChild(Player.Name):FindFirstChild(chosenClawName)
+				if not inventoryClaw then 
+					currentKaTarget = nil
+					kaHighlight.Adornee = nil
+					continue 
+				end
+			else
+				for i = 4, 1, -1 do
+					local checkClaw = "summoner_claw_" .. tostring(i)
+					if game.ReplicatedStorage:FindFirstChild("Inventories"):FindFirstChild(Player.Name):FindFirstChild(checkClaw) then
+						chosenClawName = checkClaw
+						break
+					end
+				end
+
+				inventoryClaw = game.ReplicatedStorage:FindFirstChild("Inventories"):FindFirstChild(Player.Name):FindFirstChild(chosenClawName)
+				if not inventoryClaw then 
+					currentKaTarget = nil
+					kaHighlight.Adornee = nil
+					continue 
+				end
+			end
+
+			currentKaTarget = besttarget
+			if KaidaKa.Values["Highlight Target"] then
+				kaHighlight.Adornee = besttarget
+			end
+
+			if KaidaKa.Values["Require Claw Equipped"] == false and clawName ~= chosenClawName then
+				local args = {{ hand = inventoryClaw }}
+				game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetInvItem"):InvokeServer(unpack(args))
+			end
+
+			local offsetPosition = HRP.Position + (dir * reach)
+
+			local clawArgs = {
+				{
+					clientTime = os.clock(),
+					direction = Vector3.new(dir.X, dir.Y, dir.Z),
+					position = Vector3.new(offsetPosition.X, offsetPosition.Y, offsetPosition.Z)
+				}
+			}
+
+			local yCheck = math.abs(targetHRP.Position.Y - HRP.Position.Y)
+			if yCheck > KaidaKa.Values["Reach"] then
+				kaHighlight.Adornee = nil
+				currentKaTarget = nil
+				continue
+			end
+
+			if KaidaKa.Values["Manual Swing"] == true and clicking == false then
+				continue
+			end
+
+			if not loadedSwingTrack.IsPlaying then
+				loadedSwingTrack:Play()
+			end
+
+			game:GetService("ReplicatedStorage")
+				:WaitForChild("rbxts_include")
+				:WaitForChild("node_modules")
+				:WaitForChild("@rbxts")
+				:WaitForChild("net")
+				:WaitForChild("out")
+				:WaitForChild("_NetManaged")
+				:WaitForChild("SummonerClawAttackRequest")
+				:FireServer(unpack(clawArgs))
+
+			hitting = true
+		end
+	end)
+end
+
 UserInputService.InputBegan:Connect(function(input, GPE)
 	if GPE then return end
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
