@@ -1,14 +1,14 @@
+local replicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local lastHit = os.clock()
-
 local FILE_NAME = "UI_AutoSave_Config.json"
 
--- Master table to hold all session settings
+local takeItem = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem")
+
 _G.SavedConfig = {}
-_G.IsBindingKey = false -- Prevent hotkeys from firing while re-binding
+_G.IsBindingKey = false 
 
 -- Load settings from PC on startup
 if readfile and pcall(function() return readfile(FILE_NAME) end) then
@@ -48,11 +48,19 @@ local loops = {
 	["void drop"] = false,
 	["auto clicker"] = false,
 	["blockcps bypass"] = false,
-	["leave party"] = false
+	["leave party"] = false,
+	["gravity"] = false,
+	["auto queue"] = false,
+	["fake stats"] = false,
+	["emote"] = false
 }
 
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
+
+--local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
+--local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
+--local oldGetMouseInfo = BlockSelector.getMouseInfo
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -64,6 +72,53 @@ local autoShoot = false
 local maxHoldTime = 0.1
 local maxClickInterval = 0.1   
 local isSystemEnabled = false
+
+--local BlockSelectorMod = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector'])
+--local CombatConstantMod = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant'])
+
+local armorTiers = {"emerald", "diamond", "iron", "leather"}
+local armorSlots = {
+	[0] = "helmet",
+	[1] = "chestplate",
+	[2] = "boots"
+}
+
+local currentArmorState = "unknown"
+
+
+local KnitInit, Knit
+repeat
+	KnitInit, Knit = pcall(function()
+		return require(replicatedStorage.rbxts_include.node_modules["@easy-games"].knit.src).KnitClient
+	end)
+	if KnitInit then break end
+	task.wait()
+until KnitInit
+
+-- Optional: Wait for Knit to fully start if your executor supports debug functions
+local success, isStarted = pcall(function() return debug.getupvalue(Knit.Start, 1) end)
+if success and not isStarted then
+	repeat task.wait() until debug.getupvalue(Knit.Start, 1)
+end
+
+-- 2. Create the bedwars table with ONLY your 3 required modules
+local bedwars = setmetatable({
+	Cps = require(replicatedStorage.TS["shared-constants"]).CpsConstants,
+	BlockSelector = require(replicatedStorage.rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector,
+	CombatConstant = require(replicatedStorage.TS.combat['combat-constant']).CombatConstant
+}, {
+	-- 3. The fallback: If you try to access something not in the list above, it fetches it from Knit
+	__index = function(self, ind)
+		rawset(self, ind, Knit.Controllers[ind])
+		return rawget(self, ind)
+	end
+})
+
+-- 4. Set it as a global variable so your Reach module can use it
+getgenv().bedwars = bedwars
+
+-- Access the function
+bedwars.oldGetMouseInfo = bedwars.BlockSelector.getMouseInfo
 
 local balloonEvent = game:GetService("ReplicatedStorage").rbxts_include.node_modules["@rbxts"].net.out._NetManaged.InflateBalloon
 
@@ -191,11 +246,43 @@ local resetTask = nil
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SwordHitRemote = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts").net.out:WaitForChild("_NetManaged"):WaitForChild("SwordHit")
-local cps = require(ReplicatedStorage.TS["shared-constants"]).CpsConstants
 
-local netManaged = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
-local setInvItem = netManaged:WaitForChild("SetInvItem")
 local inventoriesFolder = ReplicatedStorage:WaitForChild("Inventories")
+
+local netManaged = ReplicatedStorage:WaitForChild("rbxts_include")
+	:WaitForChild("node_modules")
+	:WaitForChild("@rbxts")
+	:WaitForChild("net")
+	:WaitForChild("out")
+	:WaitForChild("_NetManaged")
+local setInvItem = netManaged:WaitForChild("SetInvItem")
+local matchEndEvent = netManaged:WaitForChild("MatchEndEvent")
+local startQueue = game:GetService("ReplicatedStorage"):WaitForChild("events-@easy-games/lobby:shared/event/lobby-events@getEvents.Events"):WaitForChild("joinQueue")
+local emoteModuleScript = ReplicatedStorage:WaitForChild("TS")
+	:WaitForChild("locker")
+	:WaitForChild("emote")
+	:WaitForChild("emote-type")
+
+local emoteTypes = require(emoteModuleScript)
+local setArmorRemote = netManaged:WaitForChild("SetArmorInvItem")
+local itemsFolder = ReplicatedStorage:WaitForChild("Items")
+
+local emoteOptions = {}
+local seen = {}
+
+for key, value in pairs(emoteTypes) do
+	if type(key) == "string" and not seen[key] then
+		if key == string.upper(key) then
+			table.insert(emoteOptions, key)
+			seen[key] = true
+		end
+	end
+end
+table.sort(emoteOptions)
+
+
+local setInvItem = netManaged:WaitForChild("SetInvItem")
+local playerInventory = inventoriesFolder:WaitForChild(game.Players.LocalPlayer.Name)
 
 local t_find = table.find
 local t_clear = table.clear
@@ -210,6 +297,22 @@ local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local camera = workspace.CurrentCamera
+local orginalClan = nil
+local orginalLevel = nil
+local orginalChatNameColor = nil
+if Player:GetAttribute("ClanTag") then
+	orginalClan = Player:GetAttribute("ClanTag")
+end
+if Player:GetAttribute("PlayerLevel") then
+	orginalLevel = Player:GetAttribute("PlayerLevel")
+end
+if Player:GetAttribute("ChatNameColor") then
+	orginalChatNameColor = Player:GetAttribute("ChatNameColor")
+end
+
+local ClanTag = Player:GetAttribute("ClanTag")
+local ChatNameColor = Player:GetAttribute("ChatNameColor")
+local PlayerLevel = Player:GetAttribute("PlayerLevel")
 
 local localRootPart = Character:WaitForChild("HumanoidRootPart")
 local humanoid = Character:WaitForChild("Humanoid")
@@ -840,12 +943,20 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 	function mod:CreateDropdown(dName, options, default, dCallback, multiSelect)
 		multiSelect = multiSelect or false
 		local settingID = uniquePrefix .. "_" .. dName
+		local favSettingID = settingID .. "_Favs"
 
+		-- Initialize Configs
 		if _G.SavedConfig[settingID] ~= nil then
 			default = _G.SavedConfig[settingID]
 		else
 			_G.SavedConfig[settingID] = default
 		end
+
+		-- Initialize Favorites Table (Ensures it's a dictionary for speed)
+		if _G.SavedConfig[favSettingID] == nil then
+			_G.SavedConfig[favSettingID] = {}
+		end
+		local favorites = _G.SavedConfig[favSettingID]
 
 		if multiSelect then
 			if type(default) == "table" then
@@ -874,18 +985,18 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		dBtn.FontFace = Font.fromName(textFont)
 		dBtn.LayoutOrder = 1
 
-		local optFrame = Instance.new("Frame", dropCont)
+		local optFrame = Instance.new("ScrollingFrame", dropCont)
 		optFrame.BackgroundTransparency = 1
-		optFrame.AutomaticSize = Enum.AutomaticSize.Y
-		optFrame.Size = UDim2.new(1, 0, 0, 0)
+		optFrame.Size = UDim2.new(1, 0, 0, 240) -- Viewport limit (10 items high max)
+		optFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+		optFrame.AutomaticCanvasSize = "Y"
+		optFrame.ScrollBarThickness = 4
+		optFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
 		optFrame.Visible = false
 		optFrame.LayoutOrder = 2
 
 		local oLayout = Instance.new("UIListLayout", optFrame)
-
-		dBtn.MouseButton1Click:Connect(function() 
-			optFrame.Visible = not optFrame.Visible 
-		end)
+		oLayout.SortOrder = Enum.SortOrder.LayoutOrder -- Crucial for sorting favorites!
 
 		local function updateDropdownText()
 			if multiSelect then
@@ -905,67 +1016,126 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		updateDropdownText() 
 		if dCallback then dCallback(mod.Values[dName]) end
 
-		for _, opt in ipairs(options) do
-			local oBtn = Instance.new("TextButton", optFrame)
-			oBtn.Size = UDim2.new(1, 0, 0, 24)
-			oBtn.BackgroundTransparency = 1
-			oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
-			oBtn.TextXAlignment = Enum.TextXAlignment.Left
-			oBtn.TextSize = 18
-			oBtn.FontFace = Font.fromName(textFont)
+		-- OPTIMIZATION: Lazy-loading wrapper. Elements only generate when clicked open.
+		local fullyPopulated = false
+		dBtn.MouseButton1Click:Connect(function() 
+			optFrame.Visible = not optFrame.Visible 
 
-			local function updateVisual()
-				if multiSelect then
-					local isSelected = table.find(mod.Values[dName], opt)
-					oBtn.Text = (isSelected and "         > [x] " or "         > [ ] ") .. tostring(opt)
-					oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
-				else
-					oBtn.Text = "         > " .. tostring(opt)
-				end
-			end
+			if optFrame.Visible and not fullyPopulated then
+				fullyPopulated = true
 
-			updateVisual() 
-
-			oBtn.MouseEnter:Connect(function() 
-				tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
-			end)
-
-			oBtn.MouseLeave:Connect(function() 
-				if multiSelect and table.find(mod.Values[dName], opt) then return end
-				tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
-			end)
-
-			oBtn.MouseButton1Click:Connect(function()
-				if multiSelect then
-					local foundIdx = table.find(mod.Values[dName], opt)
-					if foundIdx then
-						table.remove(mod.Values[dName], foundIdx)
-					else
-						table.insert(mod.Values[dName], opt)
+				-- Generate items dynamically
+				for i, opt in ipairs(options) do
+					-- CHUNKING: Yields every 100 items to prevent the client game engine from freezing
+					if i % 100 == 0 then
+						task.wait()
 					end
 
-					updateVisual()
-					updateDropdownText()
+					local optKey = tostring(opt)
 
-					_G.SavedConfig[settingID] = mod.Values[dName]
-					saveConfigToPC()
+					-- Create container row container for Option + Favorite Star
+					local row = Instance.new("Frame", optFrame)
+					row.Size = UDim2.new(1, 0, 0, 24)
+					row.BackgroundTransparency = 1
 
-					if dCallback then dCallback(mod.Values[dName]) end
-					if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
-				else
-					optFrame.Visible = false
-					mod.Values[dName] = opt
+					-- Main Option Button
+					local oBtn = Instance.new("TextButton", row)
+					oBtn.Size = UDim2.new(1, -35, 1, 0) -- Leave space on the right for the star
+					oBtn.BackgroundTransparency = 1
+					oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
+					oBtn.TextXAlignment = Enum.TextXAlignment.Left
+					oBtn.TextSize = 18
+					oBtn.FontFace = Font.fromName(textFont)
 
-					updateDropdownText()
+					-- Favorite Button (Star)
+					local favBtn = Instance.new("TextButton", row)
+					favBtn.Size = UDim2.new(0, 24, 0, 24)
+					favBtn.Position = UDim2.new(1, -28, 0, 0)
+					favBtn.BackgroundTransparency = 1
+					favBtn.TextSize = 16
+					favBtn.FontFace = Font.fromName(textFont)
 
-					_G.SavedConfig[settingID] = opt
-					saveConfigToPC()
+					local function updateVisual()
+						if multiSelect then
+							local isSelected = table.find(mod.Values[dName], opt)
+							oBtn.Text = (isSelected and "          > [x] " or "          > [ ] ") .. optKey
+							oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
+						else
+							oBtn.Text = "          > " .. optKey
+						end
+					end
 
-					if dCallback then dCallback(opt) end
-					if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
+					-- SORTING LOGIC: Favorites get low LayoutOrders to push them to the very top
+					local function updateFavSort()
+						local isFav = favorites[optKey] == true
+						row.LayoutOrder = isFav and i or (10000 + i)
+						favBtn.Text = isFav and "★" or "☆"
+						favBtn.TextColor3 = isFav and Color3.fromRGB(254, 204, 34) or Color3.fromRGB(80, 80, 80)
+					end
+
+					updateVisual() 
+					updateFavSort()
+
+					-- Hover animations
+					oBtn.MouseEnter:Connect(function() 
+						tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
+					end)
+
+					oBtn.MouseLeave:Connect(function() 
+						if multiSelect and table.find(mod.Values[dName], opt) then return end
+						tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
+					end)
+
+					favBtn.MouseEnter:Connect(function()
+						if not favorites[optKey] then favBtn.TextColor3 = Color3.fromRGB(200, 200, 200) end
+					end)
+
+					favBtn.MouseLeave:Connect(function()
+						if not favorites[optKey] then favBtn.TextColor3 = Color3.fromRGB(80, 80, 80) end
+					end)
+
+					-- Favorite Click Handler
+					favBtn.MouseButton1Click:Connect(function()
+						favorites[optKey] = not favorites[optKey] or nil -- Toggles true/nil
+						_G.SavedConfig[favSettingID] = favorites
+						saveConfigToPC()
+						updateFavSort()
+					end)
+
+					-- Option Selection Click Handler
+					oBtn.MouseButton1Click:Connect(function()
+						if multiSelect then
+							local foundIdx = table.find(mod.Values[dName], opt)
+							if foundIdx then
+								table.remove(mod.Values[dName], foundIdx)
+							else
+								table.insert(mod.Values[dName], opt)
+							end
+
+							updateVisual()
+							updateDropdownText()
+
+							_G.SavedConfig[settingID] = mod.Values[dName]
+							saveConfigToPC()
+
+							if dCallback then dCallback(mod.Values[dName]) end
+							if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
+						else
+							optFrame.Visible = false
+							mod.Values[dName] = opt
+
+							updateDropdownText()
+
+							_G.SavedConfig[settingID] = opt
+							saveConfigToPC()
+
+							if dCallback then dCallback(opt) end
+							if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
+						end
+					end)
 				end
-			end)
-		end
+			end
+		end)
 	end
 
 	function mod:CreateKeybind(kName, defaultKey, kCallback)
@@ -1333,7 +1503,7 @@ function FW:CreateCategory(name)
 		end)
 
 		injectElements(mod, settingsCont, name .. "_" .. btnName)
-		
+
 		function mod:SetState(state)
 			setToggleState(state)
 		end
@@ -1404,6 +1574,7 @@ Killaura:CreateToggle("Highlight Target", false, nil)
 Killaura:CreateToggle("Require Sword Equipped", true, nil)
 Killaura:CreateToggle("Multi Target Hit", false, nil)
 Killaura:CreateToggle("Check If Sophia Frozen", true, nil)
+Killaura:CreateToggle("Swing Animation", true, nil)
 
 local AimAssist = Combat:CreateButton("Aim Assist",nil, true)
 AimAssist:CreateSlider("Range", 1, 150, 100, nil)
@@ -1443,6 +1614,8 @@ Reach:CreateToggle("Sword", true, nil)
 Reach:CreateToggle("Placing", true, nil)
 Reach:CreateToggle("Mining", true, nil)
 Reach:CreateSlider("Sword Reach", 1, 28, 14.8, function(val)
+	bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = val
+	print(bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE)
 end, 0.25)
 Reach:CreateSlider("Mining Reach", 1, 100, 14.8, nil, 0.25)
 Reach:CreateSlider("Placing Reach", 1, 100, 14.8, nil, 0.25)
@@ -1467,8 +1640,9 @@ local WhiteHits = Visuals:CreateButton("White Hits", nil, true)
 
 local ChestStealer = Utility:CreateButton("Chest Stealer", nil, true)
 ChestStealer:CreateSlider("Range", 1, 50, 25, nil)
-ChestStealer:CreateToggle("Crates")
+ChestStealer:CreateToggle("Crates", true, nil)
 ChestStealer:CreateToggle("Chests", true, nil)
+ChestStealer:CreateToggle("Own Crate", true, nil)
 
 local AutoArmorSwitch = Utility:CreateButton("Auto Armor Switch", nil, true)
 AutoArmorSwitch:CreateSlider("Range",1, 75, 30)
@@ -1479,6 +1653,7 @@ fastDrop:CreateKeybind("Drop Keybind", Enum.KeyCode.H, function(newKey)
 	fastDrop.Values["Drop Keybind"] = newKey
 end)
 fastDrop:CreateSlider("Drop Rate", 0.000001, 1, 0.1, nil)
+fastDrop:CreateSlider("Drop Amount", 1, 10, 1, nil, 1)
 
 local AutoBalloon = Utility:CreateButton("Auto Balloon", nil, true)
 AutoBalloon:CreateSlider("Void range", 1, 250, 100, nil)
@@ -1496,7 +1671,42 @@ VoidDrop:CreateToggle("During Whisper Fly")
 local LeaveParty = GameTab:CreateButton("Leave Party", nil, true)
 
 local BlockCPSBypass = GameTab:CreateButton("BlockCPS Bypass", nil, true)
+BlockCPSBypass:CreateSlider("CPS", 1, 100, 20,function(value)
+	if loops["blockcps bypass"] then
+		bedwars.Cps.BLOCK_PLACE_CPS = value
+	end
+end)
 
+local AutoQueue = Utility:CreateButton("Auto Queue", nil, true)
+AutoQueue:CreateSlider("Delay", 0.1, 5, 1, nil, 0.1)
+local AutoEmote = Utility:CreateButton("Auto Emote", nil, true)
+local Emote = GameTab:CreateButton("Emote", nil, true)
+Emote:CreateDropdown("Emote Type", emoteOptions, emoteOptions[1])
+local Gravity = GameTab:CreateButton("Gravity", nil, true)
+Gravity:CreateSlider("Amount", 0, 196.2, 100, function(value)
+	if loops["gravity"] then
+		workspace.Gravity = value
+	end
+end)
+local FakeStats = Visuals:CreateButton("Fake Stats", nil, true)
+
+FakeStats:CreateTextbox("Clan", tostring(orginalClan), function(value)
+	if loops["fake stats"] then
+		Player:SetAttribute("ClanTag", value)
+	end
+end)
+
+FakeStats:CreateTextbox("Level", tostring(orginalLevel), function(value)
+	if loops["fake stats"] then
+		Player:SetAttribute("PlayerLevel", tonumber(value) or orginalLevel)
+	end
+end)
+
+FakeStats:CreateColorPicker("ChatNameColor", orginalChatNameColor, function(value)
+	if loops["fake stats"] then
+		Player:SetAttribute("ChatNameColor", value)
+	end
+end)
 
 local function isInFOV(myHRP, targetHRP, maxAngle)
 	local forward = myHRP.CFrame.LookVector
@@ -1527,19 +1737,24 @@ local function faceTarget(characterA, characterB)
 	end
 end
 
+if PlayerGui:FindFirstChild("KA") then
+	PlayerGui.KA:Destroy()
+end
+
 local kaHighlight = Instance.new("Highlight")
 kaHighlight.FillColor = Color3.fromRGB(85, 0, 127)
 kaHighlight.OutlineColor = Color3.fromRGB(0, 0, 0)
 kaHighlight.FillTransparency = 0.5
 kaHighlight.OutlineTransparency = 0
 kaHighlight.Adornee = nil
+kaHighlight.Name = "KA"
 
 pcall(function() 
 	kaHighlight.Parent = Player:WaitForChild("PlayerGui")
 end)
 if not kaHighlight.Parent then kaHighlight.Parent = workspace end
 Killaura.Callbacks.OnToggle = function(state)
-	
+
 	loops["killaura"] = state
 
 	if loops["killaura"] == false then
@@ -1547,6 +1762,15 @@ Killaura.Callbacks.OnToggle = function(state)
 		kaHighlight.Adornee = nil 
 		return 
 	end
+
+	local animator = Player.Character:WaitForChild("Humanoid"):WaitForChild("Animator")
+	local swingAnimation = Instance.new("Animation")
+	swingAnimation.AnimationId = "rbxassetid://4947108314"
+
+	local loadedSwingTrack = animator:LoadAnimation(swingAnimation)
+	loadedSwingTrack.Priority = Enum.AnimationPriority.Action
+	loadedSwingTrack.Looped = false
+
 
 	task.spawn(function()
 		while loops["killaura"] == true do
@@ -1557,21 +1781,21 @@ Killaura.Callbacks.OnToggle = function(state)
 				elseif tonumber(Killaura.Values["Hits per 10s"])  == 34.50 then
 					hitDelay = 0.05775
 				elseif tonumber(Killaura.Values["Hits per 10s"]) == 35 then
-						hitDelay = 0.04
+					hitDelay = 0.04
 				elseif tonumber(Killaura.Values["Hits per 10s"]) == 35.50 then
 					hitDelay = 0.03
 				elseif tonumber(Killaura.Values["Hits per 10s"]) == 36 then 	
-						hitDelay = 0
+					hitDelay = 0
 				end
 			else
 				hitDelay = Killaura.Values["Hit Delay"]
 			end
-			
+
 			task.wait(hitDelay)
 
-			
-			
-             if not (Killaura.Values["Target Players"] or Killaura.Values["Target NPCs/Dummies"]) then
+
+
+			if not (Killaura.Values["Target Players"] or Killaura.Values["Target NPCs/Dummies"]) then
 				currentKaTarget = nil
 				kaHighlight.Adornee = nil
 				continue
@@ -1754,7 +1978,7 @@ Killaura.Callbacks.OnToggle = function(state)
 					["weapon"] = inventoryWeapon
 				}
 			}
-			
+
 			local yCheck = math.abs(targetHRP.Position.Y - HRP.Position.Y)
 
 			if yCheck > Killaura.Values["Reach"] then
@@ -1769,14 +1993,21 @@ Killaura.Callbacks.OnToggle = function(state)
 				game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetInvItem"):InvokeServer(unpack(args))
 			end
 
-				SwordHitRemote:FireServer(unpack(kaArgs))
-				hitting = true
-
-				if Killaura.Values["Face Target"] == true then
-					faceTarget(rootPart.Parent, besttarget)
+			if Killaura.Values["Swing Animation"] and not Killaura.Values["Manual Swing"] then
+				-- It simply checks if the arm is currently swinging. 
+				-- If it isn't, it starts a fresh, normal-speed swing.
+				if not loadedSwingTrack.IsPlaying then
+					loadedSwingTrack:Play()
 				end
-			
-			
+			end
+			SwordHitRemote:FireServer(unpack(kaArgs))
+			hitting = true
+
+			if Killaura.Values["Face Target"] == true then
+				faceTarget(rootPart.Parent, besttarget)
+			end
+
+
 		end
 	end)
 end
@@ -1833,8 +2064,9 @@ end
 
 AimAssist.Callbacks.OnToggle = function(state)
 	AimAssist.Toggled = state
+	loops["aim assist"] = state
 
-	if state == false then 
+	if loops["aim assist"] == false then 
 
 		if aimConnection then
 			aimConnection:Disconnect()
@@ -2002,7 +2234,7 @@ local function IsOnVoidOrBridge(hrp)
 end
 
 local isSystemEnabled = false
-Velocity.Callbacks.OnToggle = function(state) isSystemEnabled = state end
+Velocity.Callbacks.OnToggle = function(state) isSystemEnabled = state loops["velocity"] = state end
 local lastVelocity = Vector3.zero
 
 AutoShoot.Callbacks.OnToggle = function(state)
@@ -2237,6 +2469,7 @@ end
 
 RunService.Heartbeat:Connect(function()
 	if not isSystemEnabled or not Player.Character then return end
+	if not loops["velocity"] then return end
 	local HRP = Player.Character:FindFirstChild("HumanoidRootPart")
 	local Humanoid = Player.Character:FindFirstChild("Humanoid")
 	if not HRP or not Humanoid then return end
@@ -2361,6 +2594,7 @@ task.spawn(function()
 		task.wait(0.01) 
 
 		if not autoShoot then continue end
+		if not loops["auto shoot"] then continue end
 		if not AutoShoot.Values["Aim at Head"] and not AutoShoot.Values["Aim at Torso"] then continue end
 		if #AutoShoot.Values["Projectiles"] == 0 then continue end
 		if not Player.Character then continue end
@@ -2472,10 +2706,11 @@ end)
 
 WhiteHits.Callbacks.OnToggle = function(state)
 	whiteHits = state
+	loops["white hits"] = state
 end
 
 RunService.Heartbeat:Connect(function()
-	if not whiteHits then return end
+	if not loops["white hits"] then return end
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		local character = player.Character 
@@ -2488,60 +2723,51 @@ RunService.Heartbeat:Connect(function()
 			end
 		end
 	end
-	
+
 	for _, npc in pairs(workspace:GetChildren()) do
 		if npc and npc:FindFirstChild("Humanoid", true) then
 			if Players:FindFirstChild(npc.Name) then continue end
-				local highlight = npc:FindFirstChild("_DamageHighlight_")
+			local highlight = npc:FindFirstChild("_DamageHighlight_")
 
-				if highlight and highlight.Enabled then
-					highlight.Enabled = false
+			if highlight and highlight.Enabled then
+				highlight.Enabled = false
 			end
 		end
 	end
 end)
 
 
-local function findNearbyChests(radius)
-	if loops["chest stealer"] ~= true then return {} end
+local function findNearbyContainers(radius)
+	if not loops["chest stealer"] then return {}, {} end
+
 	local chests = {}
-
-	local character = Player.Character
-	if not character or not character:FindFirstChild("HumanoidRootPart") then return chests end
-	local playerPos = character.HumanoidRootPart.Position
-
-	for i, chest in pairs(workspace:GetDescendants()) do
-		if chest and chest:IsA("Part") and chest.Name == "chest" then
-			local distance = (playerPos - chest.Position).Magnitude
-
-			if distance <= radius then
-				table.insert(chests, chest)
-			end
-		end
-	end
-
-	return chests
-end
-
-local function findNearbyCrates(radius)
-	if loops["chest stealer"] ~= true then return {} end
 	local crates = {}
 
 	local character = Player.Character
-	if not character or not character:FindFirstChild("HumanoidRootPart") then return crates end
-	local playerPos = character.HumanoidRootPart.Position
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then return chests, crates end
 
-	for i, crate in pairs(workspace:GetDescendants()) do
-		if crate and crate:IsA("Part") and crate.Name == "team_crate" then
-			local distance = (playerPos - crate.Position).Magnitude
+	-- Spatial Query: Instantly gets parts within your radius (Insanely fast)
+	local parts = workspace:GetPartBoundsInRadius(root.Position, radius)
 
-			if distance <= radius then
-				table.insert(crates, crate)
+	for _, part in ipairs(parts) do
+		if part:IsA("BasePart") then
+			if part.Name == "chest" then
+				table.insert(chests, part)
+			elseif part.Name == "team_crate" then
+
+				if  ChestStealer.Values["Own Crate"] == false then
+					if part:GetAttribute("Team") == Player:GetAttribute("Team") then
+						continue
+					end
+				end
+				table.insert(crates, part)
+
 			end
 		end
-	end
+	end 
 
-	return crates
+	return chests, crates
 end
 
 ChestStealer.Callbacks.OnToggle = function(state)
@@ -2550,71 +2776,53 @@ end
 
 task.spawn(function()
 	while true do
-		task.wait(0.1) 
+		task.wait(0.01) 
 
 		if loops["chest stealer"] then
-			if Player.Character and Player.Character:FindFirstChild("Humanoid") then
-				local character = Player.Character
-				local Humanoid = character.Humanoid
+			local character = Player.Character
+			local humanoid = character and character:FindFirstChild("Humanoid")
 
-				if Humanoid.Health > 0 then
-					local rangeValue = tonumber(ChestStealer.Values["Range"]) or 20
+			if humanoid and humanoid.Health > 0 then
+				local rangeValue = tonumber(ChestStealer.Values["Range"]) or 20
 
-					if ChestStealer.Values["Crates"] then
-						local crates = findNearbyCrates(rangeValue)
-						for i, crate in pairs(crates) do
-							local folder = crate:FindFirstChild("ChestFolderValue")
-							local crateInventory = folder and folder.Value
+				local chests, crates = findNearbyContainers(rangeValue)
 
-							if crateInventory then
-								for i, item in pairs(crateInventory:GetChildren()) do
-									if item.Name ~= "ChestOwner" then
-										local args = {
-											crateInventory,
-											item
-										}
+				local function processInventory(container)
+					local folder = container:FindFirstChild("ChestFolderValue")
+					local inventory = folder and folder.Value
 
-										game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem"):InvokeServer(unpack(args))
-									end
-								end
+					if inventory then
+						for _, item in ipairs(inventory:GetChildren()) do
+							if item.Name ~= "ChestOwner" then
+								task.spawn(function()
+									takeItem:InvokeServer(inventory, item)
+								end)
 							end
 						end
 					end
+				end
 
-					if ChestStealer.Values["Chests"] then
-						local chests = findNearbyChests(rangeValue)
-						for i, chest in pairs(chests) do
-							local folder = chest:FindFirstChild("ChestFolderValue")
-							local chestInventory = folder and folder.Value
+				if ChestStealer.Values["Crates"] then
+					for _, crate in ipairs(crates) do
+						processInventory(crate)
+					end
+				end
 
-							if chestInventory then
-								for i, item in pairs(chestInventory:GetChildren()) do
-									if item.Name ~= "ChestOwner" then
-										local args = {
-											chestInventory,
-											item
-										}
-
-										game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem"):InvokeServer(unpack(args))
-									end
-								end
-							end
-						end
+				if ChestStealer.Values["Chests"] then
+					for _, chest in ipairs(chests) do
+						processInventory(chest)
 					end
 				end
 			end
 		end
 	end
 end)
-
-local function inflateBalloons()
+local function inflateBalloons(maxBalloons)
 	local char = Player.Character
 	if not char then return end
 
 	local inflated = char:GetAttribute("InflatedBalloons") or 0
-	local max = tonumber(AutoBalloon.Values["Amount of Balloons"]) or 0
-
-	local needed = max - inflated
+	local needed = maxBalloons - inflated
 	if needed <= 0 then return end
 
 	for i = 1, needed do
@@ -2628,51 +2836,52 @@ AutoBalloon.Callbacks.OnToggle = function(state)
 
 	if loops["auto balloon"] then
 		task.spawn(function()
-
 			while loops["auto balloon"] do
 				task.wait(0.01)
+
 				local char = Player.Character
-				if not char then return end
+				if not char then continue end 
+
 				local inflated = char:GetAttribute("InflatedBalloons") or 0
+				local maxBalloons = tonumber(AutoBalloon.Values["Amount of Balloons"]) or 0
 
-				local hrp = char:FindFirstChild("HumanoidRootPart")
-				local hum = char:FindFirstChild("Humanoid")
-
-				if tonumber(inflated) >= tonumber(AutoBalloon.Values["Amount of Balloons"]) then
+				if tonumber(inflated) >= maxBalloons then
 					task.wait(0.5)
 					continue
 				end
 
-				if hrp and hum and hum.Health > 0 then
-					local char = Player.Character
-					local HRP = char.HumanoidRootPart
+				local hrp = char:FindFirstChild("HumanoidRootPart")
+				local hum = char:FindFirstChild("Humanoid")
 
-					local voidRange = tonumber(AutoBalloon.Values["Void range"])
+				if hrp and hum and hum.Health > 0 then
+					local voidRange = tonumber(AutoBalloon.Values["Void range"]) or 0
 					local threshold = -voidRange
 
-					if HRP.Position.Y <= threshold then
-						if char:FindFirstChild("HandInvItem") then
-							local item = char.HandInvItem.Value
-							local itemName = item.Name
+					if hrp.Position.Y <= threshold then
+						local handInvItem = char:FindFirstChild("HandInvItem")
+						local currentItemValue = handInvItem and handInvItem.Value
+
+						if currentItemValue then
+							local itemName = currentItemValue.Name
 
 							if itemName ~= "balloon" then
-								if inventoriesFolder:FindFirstChild(Player.Name):FindFirstChild("balloon") then
-									local oldItem = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):WaitForChild(Player.Name):WaitForChild(tostring(char.HandInvItem.Value.Name))
-									local balloonItem = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):WaitForChild(Player.Name):WaitForChild("balloon")
-									local args = {{ hand = balloonItem }}
-									game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetInvItem"):InvokeServer(unpack(args))
+								local balloonItem = playerInventory:FindFirstChild("balloon")
 
-									inflateBalloons()
+								if balloonItem then
+									local oldItem = playerInventory:FindFirstChild(itemName)
+
+									setInvItem:InvokeServer({ hand = balloonItem })
+
+									inflateBalloons(maxBalloons)
 
 									task.wait(0.01)
 
-									print(oldItem)
-
-									local Oldargs = {{ hand = oldItem }}
-									game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetInvItem"):InvokeServer(unpack(Oldargs))
+									if oldItem then
+										setInvItem:InvokeServer({ hand = oldItem })
+									end
 								end
 							else
-								inflateBalloons()
+								inflateBalloons(maxBalloons)
 							end
 						end
 					end
@@ -2686,10 +2895,8 @@ local function isValidGround(part)
 	if not part:IsA("BasePart") then return false end
 	if part.CanCollide == false then return false end
 
-	-- reject walls (tall vertical surfaces)
 	local upDot = part.CFrame.UpVector:Dot(Vector3.yAxis)
 
-	-- 0.7+ means mostly flat surface
 	if upDot < 0.7 then
 		return false
 	end
@@ -2859,80 +3066,58 @@ AutoPearl.Callbacks.OnToggle = function(state)
 	end
 end
 
+
 local function dropAllItems(iron, diamond, emerald)
-	local playerInventory = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):FindFirstChild(game.Players.LocalPlayer.Name)
-	if not playerInventory then return end
-	
 	local char = Player.Character
 	if not char then return end
+
 	local inflated = char:GetAttribute("InflatedBalloons")
-	
-	
-	if VoidDrop.Values["During Balloons"] == false then
-		if inflated then
-			return
+	if VoidDrop.Values["During Balloons"] == false and inflated then
+		return
+	end
+
+	if loops["auto balloon"] == true then
+		if playerInventory:FindFirstChild("balloon") and VoidDrop.Values["During Balloons"] == false then
+			return 
 		end
 	end
-	
+
 	if VoidDrop.Values["During Whisper Fly"] == false then
-		for i, part in pairs(game.Workspace:GetChildren()) do
+		for _, part in ipairs(workspace:GetChildren()) do
 			if part.Name == "ServerOwl" then
-				if part:GetAttribute("Target") == Player.UserId then
-					if part:GetAttribute("Status") == 2 then
-						return
-					end
+				if part:GetAttribute("Target") == Player.UserId and part:GetAttribute("Status") == 2 then
+					return
 				end
 			end
 		end
 	end
 
-	if iron == true then
-		local ironItem = playerInventory:FindFirstChild("iron")
-		if ironItem then
+	local function fireDrop(itemName)
+		local itemInstance = playerInventory:FindFirstChild(itemName)
+		if itemInstance then
+			local amount = itemInstance:GetAttribute("Amount") or 1
+
 			local args = {
 				{
-					item = ironItem,
-					amount = ironItem:GetAttribute("Amount")
+					item = itemInstance,
+					amount = amount
 				}
 			}
-			
-			dropRemote:InvokeServer(unpack(args))
+
+			task.spawn(function()
+				dropRemote:InvokeServer(unpack(args))
+			end)
 		end
 	end
-	
-	if diamond == true then
-		local diamondItem = playerInventory:FindFirstChild("diamond")
-		if diamondItem then
-			local diamondArgs = {
-				{
-					item = diamondItem,
-					amount = diamondItem:GetAttribute("Amount")
-				}
-			}
-			
-			dropRemote:InvokeServer(unpack(diamondArgs))
-		end
-	end
-	
-	if emerald == true then
-		local emeraldItem = playerInventory:FindFirstChild("emerald")
-		if emeraldItem then
-			local emeraldArgs = {
-				{
-					item = emeraldItem,
-					amount = emeraldItem:GetAttribute("Amount")
-				}
-			}
-			
-			dropRemote:InvokeServer(unpack(emeraldArgs))
-		end
-	end
+
+	if iron then fireDrop("iron") end
+	if diamond then fireDrop("diamond") end
+	if emerald then fireDrop("emerald") end
 end
 
 VoidDrop.Callbacks.OnToggle = function(state)
 	loops["void drop"] = state
 end
-
 
 task.spawn(function()
 	while true do
@@ -2940,11 +3125,11 @@ task.spawn(function()
 
 		if loops["void drop"] then
 			local char = Player.Character
-			local hrp = char:FindFirstChild("HumanoidRootPart")
-			local hum = char:FindFirstChild("Humanoid")
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			local hum = char and char:FindFirstChild("Humanoid")
 
 			if hrp and hum and hum.Health > 0 then
-				local voidRange = tonumber(VoidDrop.Values["Void range"])
+				local voidRange = tonumber(VoidDrop.Values["Void range"]) or 0
 
 				if hrp.Position.Y <= -voidRange then
 					dropAllItems(true, true, true) 
@@ -2963,31 +3148,34 @@ UserInputService.InputBegan:Connect(function(input)
 			isDropping = true
 
 			task.spawn(function()
-				while isDropping and UserInputService:IsKeyDown(fastDrop.Values["Drop Keybind"]) do
+				local dropKey = fastDrop.Values["Drop Keybind"]
+				local dropAmount = fastDrop.Values["Drop Amount"]
+				local dropRate = fastDrop.Values["Drop Rate"] or 0.1
+
+				while isDropping and UserInputService:IsKeyDown(dropKey) do
 					local currentCharacter = Player.Character
-					if not currentCharacter then break end
+					local handItem = currentCharacter and currentCharacter:FindFirstChild("HandInvItem")
+					local handItemValue = handItem and handItem.Value
 
-					local handItem = currentCharacter:FindFirstChild("HandInvItem")
-					if not handItem then break end
-
-					local characterItem = handItem.Value.Name
+					if not handItemValue then break end
 
 					local playerInventory = inventoriesFolder:FindFirstChild(Player.Name)
-					if not playerInventory then break end
+					local inventoryItem = playerInventory and playerInventory:FindFirstChild(handItemValue.Name)
 
-					local inventoryItem = playerInventory:FindFirstChild(characterItem)
 					if not inventoryItem then break end
 
 					local args = {
 						{
 							item = inventoryItem,
-							amount = 1
+							amount = dropAmount
 						}
 					}
 
-					dropRemote:InvokeServer(unpack(args))
+					task.spawn(function()
+						dropRemote:InvokeServer(unpack(args))
+					end)
 
-					task.wait(fastDrop.Values["Drop Rate"])
+					task.wait(dropRate)
 				end
 				isDropping = false
 			end)
@@ -2995,27 +3183,39 @@ UserInputService.InputBegan:Connect(function(input)
 	end
 end)
 
+--[[BlockCPSBypass.Callbacks.OnToggle = function(state)
+	loops["blockcps bypass"] = state
+
+	if state then
+		bedwars.Cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
+	else
+		bedwars.Cps.BLOCK_PLACE_CPS = 12
+	end
+end
 
 
-Reach.Callbacks.OnToggle = function(state)
+
+--[[Reach.Callbacks.OnToggle = function(state)
 	loops["reach"] = state
-	
+
 	if state then
 		if Reach.Values["Sword"] == true then
+			bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
 		end
-		
+
 		if Reach.Values["Mining"] == true then
-			
+
 		end
-		
+
 		if Reach.Values["Placing"] == true then
 
 		end
 	end
-	
+
 	if not state then
+		bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
 	end
-end
+end--]]
 
 LeaveParty.Callbacks.OnToggle = function(state)
 
@@ -3024,4 +3224,206 @@ LeaveParty.Callbacks.OnToggle = function(state)
 		LeaveParty.Toggled = false
 		LeaveParty:SetState(false)
 	end
+end
+
+Gravity.Callbacks.OnToggle = function(state)
+	loops["gravity"] = state
+	if loops["gravity"] then
+		workspace.Gravity = Gravity.Values["Amount"]
+	else
+		workspace.Gravity = 196.2
+	end
+end
+
+AutoArmorSwitch.Callbacks.OnToggle = function(state)
+	loops["auto armor switch"] = state
+
+
+end
+
+
+task.spawn(function()
+	while loops["auto armor switch"] do
+		if not Character then continue end
+
+
+	end
+end)
+
+local function removeClientArmorVisuals(character)
+	local keywords = {"helmet", "chestplate", "boots"}
+	for _, part in ipairs(character:GetChildren()) do
+		for _, keyword in ipairs(keywords) do
+			if string.find(part.Name:lower(), keyword) then
+				part:Destroy()
+				break
+			end
+		end
+	end 
+end
+
+local function applyClientArmorVisuals(character, tier, slotName)
+	local targetItemName = tier .. "_" .. slotName
+	local itemTemplate = itemsFolder:FindFirstChild(targetItemName)
+
+	if itemTemplate then
+		local clone = itemTemplate:Clone()
+
+		if clone:IsA("Accessory") then
+			local hum = character:FindFirstChild("Humanoid")
+			if hum then hum:AddAccessory(clone) end
+
+		elseif clone:IsA("Folder") or clone:IsA("Model") then
+			for _, child in ipairs(clone:GetChildren()) do
+				child.Parent = character
+			end
+			clone:Destroy() 
+		else
+			clone.Parent = character
+		end
+	end
+end
+
+-- Helper 3: Find highest tier armor in inventory
+local function getStrongestArmorForSlot(slotName)
+	local playerInventory = ReplicatedStorage:WaitForChild("Inventories"):FindFirstChild(Player.Name)
+	if not playerInventory then return nil, nil end
+
+	for _, tier in ipairs(armorTiers) do
+		local checkName = tier .. "_" .. slotName
+		local foundItem = playerInventory:FindFirstChild(checkName)
+		if foundItem then
+			return foundItem, tier 
+		end
+	end
+	return nil, nil
+end
+
+-- Helper 4: Check for nearby enemies
+local function isEnemyInRange(range)
+	local myChar = Player.Character
+	local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+	if not myRoot then return false end
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= Player then
+			-- Verify they aren't on our team and aren't spectators
+			if player.Team ~= Player.Team and (not player.Team or player.Team.Name ~= "Spectators") then
+				local char = player.Character
+				local root = char and char:FindFirstChild("HumanoidRootPart")
+				local hum = char and char:FindFirstChild("Humanoid")
+
+				if root and hum and hum.Health > 0 then
+					local distance = (root.Position - myRoot.Position).Magnitude
+					if distance <= range then
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+AutoArmorSwitch.Callbacks.OnToggle = function(state)
+	loops["auto armor switch"] = state
+	currentArmorState = "unknown" 
+end
+
+task.spawn(function()
+	while true do
+		task.wait(0.1) 
+
+		if loops["auto armor switch"] then
+			local character = Player.Character
+			if not character or not character:FindFirstChild("Humanoid") or character.Humanoid.Health <= 0 then 
+				continue 
+			end
+
+			local range = tonumber(AutoArmorSwitch.Values["Range"]) or 20
+			local enemyNearby = isEnemyInRange(range)
+
+			if enemyNearby and currentArmorState ~= "equipped" then
+				currentArmorState = "equipped"
+
+				removeClientArmorVisuals(character)
+
+				for slotId, slotName in pairs(armorSlots) do
+					local bestItem, bestTier = getStrongestArmorForSlot(slotName)
+
+					if bestItem then
+						task.spawn(function()
+							local args = {{ item = bestItem, armorSlot = slotId }}
+							setArmorRemote:InvokeServer(unpack(args))
+						end)
+
+						task.spawn(function()
+							applyClientArmorVisuals(character, bestTier, slotName)
+						end)
+					end
+				end
+
+			elseif not enemyNearby and currentArmorState ~= "unequipped" then
+				currentArmorState = "unequipped"
+
+				removeClientArmorVisuals(character)
+
+				for slotId = 0, 2 do
+					task.spawn(function()
+						local args = {{ item = false, armorSlot = slotId }}
+						setArmorRemote:InvokeServer(unpack(args))
+					end)
+				end
+			end
+		end
+	end
+end)
+
+AutoQueue.Callbacks.OnToggle = function(state)
+	loops["auto queue"] = state
+end
+
+matchEndEvent.OnClientEvent:Connect(function()
+	if loops["auto queue"] then
+		if workspace:GetAttribute("QueueType") then
+			task.wait(AutoQueue.Values["Delay"] or 0.1)
+			local args = {
+				{
+					queueType = workspace:GetAttribute("QueueType")
+				}
+			}
+
+			startQueue:FireServer(unpack(args))
+
+		end
+	end
+end)
+
+--leave queue: game:GetService("ReplicatedStorage"):WaitForChild("events-@easy-games/lobby:shared/event/lobby-events@getEvents.Events"):WaitForChild("leaveQueue"):FireServer()
+
+FakeStats.Callbacks.OnToggle = function(state)
+	loops["fake stats"] = state
+
+	if state then
+		Player:SetAttribute("ClanTag", FakeStats.Values["Clan"])
+
+		Player:SetAttribute(
+			"PlayerLevel",
+			tonumber(FakeStats.Values["Level"]) or orginalLevel
+		)
+
+		Player:SetAttribute(
+			"ChatNameColor",
+			FakeStats.Values["ChatNameColor"]
+		)
+	else
+		Player:SetAttribute("ClanTag", orginalClan)
+		Player:SetAttribute("PlayerLevel", orginalLevel)
+		Player:SetAttribute("ChatNameColor", orginalChatNameColor)
+	end
+end
+
+Emote.Callbacks.OnToggle = function(state)
+	loops["emote"] = state 
+
 end
