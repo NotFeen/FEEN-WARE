@@ -3,7 +3,7 @@ local HttpService = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
-local FILE_NAME = "UI_AutoSavee_Config.json"
+local FILE_NAME = "FW_AutoSave_Config.json"
 
 local takeItem = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem")
 
@@ -58,9 +58,9 @@ local loops = {
 local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
 local setArmorRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetArmorInvItem")
 
-local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
+--[[local BlockSelector = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector
 local CombatConstant = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant']).CombatConstant
-local oldGetMouseInfo = BlockSelector.getMouseInfo
+local oldGetMouseInfo = BlockSelector.getMouseInfo]]--
 
 local lastSort = 2
 local currentKaTarget = nil
@@ -73,8 +73,8 @@ local maxHoldTime = 0.1
 local maxClickInterval = 0.1   
 local isSystemEnabled = false
 
-local BlockSelectorMod = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector'])
-local CombatConstantMod = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant'])
+--local BlockSelectorMod = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector'])
+--local CombatConstantMod = require(game:GetService("ReplicatedStorage").TS.combat['combat-constant'])
 
 local armorTiers = {"emerald", "diamond", "iron", "leather"}
 local armorSlots = {
@@ -84,41 +84,6 @@ local armorSlots = {
 }
 
 local currentArmorState = "unknown"
-
-
-local KnitInit, Knit
-repeat
-	KnitInit, Knit = pcall(function()
-		return require(replicatedStorage.rbxts_include.node_modules["@easy-games"].knit.src).KnitClient
-	end)
-	if KnitInit then break end
-	task.wait()
-until KnitInit
-
--- Optional: Wait for Knit to fully start if your executor supports debug functions
-local success, isStarted = pcall(function() return debug.getupvalue(Knit.Start, 1) end)
-if success and not isStarted then
-	repeat task.wait() until debug.getupvalue(Knit.Start, 1)
-end
-
--- 2. Create the bedwars table with ONLY your 3 required modules
-local bedwars = setmetatable({
-	Cps = require(replicatedStorage.TS["shared-constants"]).CpsConstants,
-	BlockSelector = require(replicatedStorage.rbxts_include.node_modules['@easy-games']['block-engine'].out.client.select['block-selector']).BlockSelector,
-	CombatConstant = require(replicatedStorage.TS.combat['combat-constant']).CombatConstant
-}, {
-	-- 3. The fallback: If you try to access something not in the list above, it fetches it from Knit
-	__index = function(self, ind)
-		rawset(self, ind, Knit.Controllers[ind])
-		return rawget(self, ind)
-	end
-})
-
--- 4. Set it as a global variable so your Reach module can use it
-getgenv().bedwars = bedwars
-
--- Access the function
-bedwars.oldGetMouseInfo = bedwars.BlockSelector.getMouseInfo
 
 local balloonEvent = game:GetService("ReplicatedStorage").rbxts_include.node_modules["@rbxts"].net.out._NetManaged.InflateBalloon
 
@@ -263,14 +228,14 @@ local emoteModuleScript = ReplicatedStorage:WaitForChild("TS")
 	:WaitForChild("emote")
 	:WaitForChild("emote-type")
 
-local emoteTypes = require(emoteModuleScript)
+--local emoteTypes = require(emoteModuleScript)
 local setArmorRemote = netManaged:WaitForChild("SetArmorInvItem")
 local itemsFolder = ReplicatedStorage:WaitForChild("Items")
 
 local emoteOptions = {}
 local seen = {}
 
-for key, value in pairs(emoteTypes) do
+--[[for key, value in pairs(emoteTypes) do
 	if type(key) == "string" and not seen[key] then
 		if key == string.upper(key) then
 			table.insert(emoteOptions, key)
@@ -278,7 +243,7 @@ for key, value in pairs(emoteTypes) do
 		end
 	end
 end
-table.sort(emoteOptions)
+table.sort(emoteOptions)]]--
 
 
 local setInvItem = netManaged:WaitForChild("SetInvItem")
@@ -1614,8 +1579,6 @@ Reach:CreateToggle("Sword", true, nil)
 Reach:CreateToggle("Placing", true, nil)
 Reach:CreateToggle("Mining", true, nil)
 Reach:CreateSlider("Sword Reach", 1, 28, 14.8, function(val)
-	bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = val
-	print(bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE)
 end, 0.25)
 Reach:CreateSlider("Mining Reach", 1, 100, 14.8, nil, 0.25)
 Reach:CreateSlider("Placing Reach", 1, 100, 14.8, nil, 0.25)
@@ -1673,7 +1636,7 @@ local LeaveParty = GameTab:CreateButton("Leave Party", nil, true)
 local BlockCPSBypass = GameTab:CreateButton("BlockCPS Bypass", nil, true)
 BlockCPSBypass:CreateSlider("CPS", 1, 100, 20,function(value)
 	if loops["blockcps bypass"] then
-		bedwars.Cps.BLOCK_PLACE_CPS = value
+		--bedwars.Cps.BLOCK_PLACE_CPS = value
 	end
 end)
 
@@ -1681,7 +1644,7 @@ local AutoQueue = Utility:CreateButton("Auto Queue", nil, true)
 AutoQueue:CreateSlider("Delay", 0.1, 5, 1, nil, 0.1)
 local AutoEmote = Utility:CreateButton("Auto Emote", nil, true)
 local Emote = GameTab:CreateButton("Emote", nil, true)
-Emote:CreateDropdown("Emote Type", emoteOptions, emoteOptions[1])
+Emote:CreateDropdown("Emote Type")
 local Gravity = GameTab:CreateButton("Gravity", nil, true)
 Gravity:CreateSlider("Amount", 0, 196.2, 100, function(value)
 	if loops["gravity"] then
@@ -3187,9 +3150,9 @@ BlockCPSBypass.Callbacks.OnToggle = function(state)
 	loops["blockcps bypass"] = state
 
 	if state then
-		bedwars.Cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
+		--bedwars.Cps.BLOCK_PLACE_CPS = BlockCPSBypass.Values["CPS"]
 	else
-		bedwars.Cps.BLOCK_PLACE_CPS = 12
+		--bedwars.Cps.BLOCK_PLACE_CPS = 12
 	end
 end
 
@@ -3200,7 +3163,6 @@ Reach.Callbacks.OnToggle = function(state)
 
 	if state then
 		if Reach.Values["Sword"] == true then
-			bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
 		end
 
 		if Reach.Values["Mining"] == true then
@@ -3213,7 +3175,6 @@ Reach.Callbacks.OnToggle = function(state)
 	end
 
 	if not state then
-		bedwars.CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.8
 	end
 end
 
