@@ -1,8 +1,22 @@
 local varStorage = {}
-setmetatable(_ENV, {
-	__index = varStorage,
-	__newindex = varStorage
+local originalEnv = getfenv(0) -- Captures game, workspace, script, etc.
+
+-- Create a proxy table for the environment
+local envProxy = setmetatable({}, {
+	__index = function(_, key)
+		-- Check your custom storage first; if it's not there, grab it from Roblox's globals
+		if varStorage[key] ~= nil then
+			return varStorage[key]
+		end
+		return originalEnv[key]
+	end,
+	__newindex = function(_, key, value)
+		varStorage[key] = value
+	end
 })
+
+-- Apply the proxy to the current script's environment
+setfenv(1, envProxy)
 
 local chatQueue = {}
 local queueActive = false
@@ -772,7 +786,7 @@ end
 	local UserInputService = game:GetService("UserInputService")
 	local RunService = game:GetService("RunService")
 
-	local FILE_NAME = "FWWW_AutoSave_Config.json"
+	local FILE_NAME = "FWWWWW_AutoSave_Config.json"
 
 	local takeItem = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem")
 
@@ -839,7 +853,9 @@ end
 		["auto warden"] = false,
 		["auto miner"] = false,
 		["auto kaliyah"] = false,
-		["auto toxic"] = false
+		["auto toxic"] = false,
+		["auto fish"] = false,
+		["zoom unlocker"] = false
 	}
 
 	local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
@@ -1709,203 +1725,253 @@ end
 			end)
 		end
 
-		function mod:CreateDropdown(dName, options, default, dCallback, multiSelect)
-			multiSelect = multiSelect or false
-			local settingID = uniquePrefix .. "_" .. dName
-			local favSettingID = settingID .. "_Favs"
+	function mod:CreateDropdown(dName, options, default, dCallback, multiSelect, isPlayerDropdown)
+		multiSelect = multiSelect or false
+		local settingID = uniquePrefix .. "_" .. dName
+		local favSettingID = settingID .. "_Favs"
 
-			-- Initialize Configs
-			if _G.SavedConfig[settingID] ~= nil then
-				default = _G.SavedConfig[settingID]
+		-- If it's a player dropdown, override the provided options with current players
+		if isPlayerDropdown then
+			options = {}
+			for _, p in ipairs(Players:GetPlayers()) do
+				table.insert(options, p.Name)
+			end
+		end
+
+		-- Initialize Configs
+		if _G.SavedConfig[settingID] ~= nil then
+			default = _G.SavedConfig[settingID]
+		else
+			_G.SavedConfig[settingID] = default
+		end
+
+		-- Initialize Favorites Table
+		if _G.SavedConfig[favSettingID] == nil then
+			_G.SavedConfig[favSettingID] = {}
+		end
+		local favorites = _G.SavedConfig[favSettingID]
+
+		if multiSelect then
+			if type(default) == "table" then
+				mod.Values[dName] = {}
+				for _, v in ipairs(default) do table.insert(mod.Values[dName], v) end
 			else
-				_G.SavedConfig[settingID] = default
+				mod.Values[dName] = default and {default} or {}
 			end
+		else
+			mod.Values[dName] = default
+		end
 
-			-- Initialize Favorites Table (Ensures it's a dictionary for speed)
-			if _G.SavedConfig[favSettingID] == nil then
-				_G.SavedConfig[favSettingID] = {}
-			end
-			local favorites = _G.SavedConfig[favSettingID]
+		local dropCont = Instance.new("Frame", settingsCont)
+		dropCont.BackgroundTransparency = 1
+		dropCont.AutomaticSize = Enum.AutomaticSize.Y
+		dropCont.Size = UDim2.new(1, 0, 0, 0)
+		local dLayout = Instance.new("UIListLayout", dropCont)
+		dLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
+		local dBtn = Instance.new("TextButton", dropCont)
+		dBtn.Size = UDim2.new(1, 0, 0, 28)
+		dBtn.BackgroundTransparency = 1
+		dBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+		dBtn.TextXAlignment = Enum.TextXAlignment.Left
+		dBtn.TextSize = 20
+		dBtn.FontFace = Font.fromName(textFont)
+		dBtn.LayoutOrder = 1
+
+		local optFrame = Instance.new("ScrollingFrame", dropCont)
+		optFrame.BackgroundTransparency = 1
+		optFrame.Size = UDim2.new(1, 0, 0, 240)
+		optFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+		optFrame.AutomaticCanvasSize = "Y"
+		optFrame.ScrollBarThickness = 4
+		optFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
+		optFrame.Visible = false
+		optFrame.LayoutOrder = 2
+
+		local oLayout = Instance.new("UIListLayout", optFrame)
+		oLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+		local function updateDropdownText()
 			if multiSelect then
-				if type(default) == "table" then
-					mod.Values[dName] = {}
-					for _, v in ipairs(default) do table.insert(mod.Values[dName], v) end
+				local count = #mod.Values[dName]
+				if count == 0 then
+					dBtn.Text = "      - " .. dName .. ": None"
+				elseif count == 1 then
+					dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName][1])
 				else
-					mod.Values[dName] = default and {default} or {}
+					dBtn.Text = "      - " .. dName .. ": [" .. count .. " Selected]"
 				end
 			else
-				mod.Values[dName] = default
+				-- Handle nil gracefully
+				local val = mod.Values[dName]
+				dBtn.Text = "      - " .. dName .. ": " .. (val ~= nil and tostring(val) or "None")
+			end
+		end
+
+		updateDropdownText() 
+		if dCallback then dCallback(mod.Values[dName]) end
+
+		local fullyPopulated = false
+
+		-- Extracted the generation into a function so it can be refreshed for player joins/leaves
+		local function buildOptions()
+			-- Clear existing items (except UIListLayout)
+			for _, child in ipairs(optFrame:GetChildren()) do
+				if child:IsA("Frame") then
+					child:Destroy()
+				end
 			end
 
-			local dropCont = Instance.new("Frame", settingsCont)
-			dropCont.BackgroundTransparency = 1
-			dropCont.AutomaticSize = Enum.AutomaticSize.Y
-			dropCont.Size = UDim2.new(1, 0, 0, 0)
-			local dLayout = Instance.new("UIListLayout", dropCont)
-			dLayout.SortOrder = Enum.SortOrder.LayoutOrder
+			for i, opt in ipairs(options) do
+				if i % 100 == 0 then task.wait() end
 
-			local dBtn = Instance.new("TextButton", dropCont)
-			dBtn.Size = UDim2.new(1, 0, 0, 28)
-			dBtn.BackgroundTransparency = 1
-			dBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
-			dBtn.TextXAlignment = Enum.TextXAlignment.Left
-			dBtn.TextSize = 20
-			dBtn.FontFace = Font.fromName(textFont)
-			dBtn.LayoutOrder = 1
+				local optKey = tostring(opt)
 
-			local optFrame = Instance.new("ScrollingFrame", dropCont)
-			optFrame.BackgroundTransparency = 1
-			optFrame.Size = UDim2.new(1, 0, 0, 240) -- Viewport limit (10 items high max)
-			optFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-			optFrame.AutomaticCanvasSize = "Y"
-			optFrame.ScrollBarThickness = 4
-			optFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 100)
-			optFrame.Visible = false
-			optFrame.LayoutOrder = 2
+				local row = Instance.new("Frame", optFrame)
+				row.Size = UDim2.new(1, 0, 0, 24)
+				row.BackgroundTransparency = 1
 
-			local oLayout = Instance.new("UIListLayout", optFrame)
-			oLayout.SortOrder = Enum.SortOrder.LayoutOrder -- Crucial for sorting favorites!
+				local oBtn = Instance.new("TextButton", row)
+				oBtn.Size = UDim2.new(1, -35, 1, 0)
+				oBtn.BackgroundTransparency = 1
+				oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
+				oBtn.TextXAlignment = Enum.TextXAlignment.Left
+				oBtn.TextSize = 18
+				oBtn.FontFace = Font.fromName(textFont)
 
-			local function updateDropdownText()
-				if multiSelect then
-					local count = #mod.Values[dName]
-					if count == 0 then
-						dBtn.Text = "      - " .. dName .. ": None"
-					elseif count == 1 then
-						dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName][1])
+				local favBtn = Instance.new("TextButton", row)
+				favBtn.Size = UDim2.new(0, 24, 0, 24)
+				favBtn.Position = UDim2.new(1, -28, 0, 0)
+				favBtn.BackgroundTransparency = 1
+				favBtn.TextSize = 16
+				favBtn.FontFace = Font.fromName(textFont)
+
+				local function updateVisual()
+					if multiSelect then
+						local isSelected = table.find(mod.Values[dName], opt)
+						oBtn.Text = (isSelected and "          > [x] " or "          > [ ] ") .. optKey
+						oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
 					else
-						dBtn.Text = "      - " .. dName .. ": [" .. count .. " Selected]"
+						oBtn.Text = "          > " .. optKey
+					end
+				end
+
+				local function updateFavSort()
+					local isFav = favorites[optKey] == true
+					row.LayoutOrder = isFav and i or (10000 + i)
+					favBtn.Text = isFav and "★" or "☆"
+					favBtn.TextColor3 = isFav and Color3.fromRGB(254, 204, 34) or Color3.fromRGB(80, 80, 80)
+				end
+
+				updateVisual() 
+				updateFavSort()
+
+				oBtn.MouseEnter:Connect(function() 
+					tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
+				end)
+
+				oBtn.MouseLeave:Connect(function() 
+					if multiSelect and table.find(mod.Values[dName], opt) then return end
+					tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
+				end)
+
+				favBtn.MouseEnter:Connect(function()
+					if not favorites[optKey] then favBtn.TextColor3 = Color3.fromRGB(200, 200, 200) end
+				end)
+
+				favBtn.MouseLeave:Connect(function()
+					if not favorites[optKey] then favBtn.TextColor3 = Color3.fromRGB(80, 80, 80) end
+				end)
+
+				favBtn.MouseButton1Click:Connect(function()
+					favorites[optKey] = not favorites[optKey] or nil
+					_G.SavedConfig[favSettingID] = favorites
+					saveConfigToPC()
+					updateFavSort()
+				end)
+
+				oBtn.MouseButton1Click:Connect(function()
+					if multiSelect then
+						local foundIdx = table.find(mod.Values[dName], opt)
+						if foundIdx then
+							table.remove(mod.Values[dName], foundIdx)
+						else
+							table.insert(mod.Values[dName], opt)
+						end
+
+						updateVisual()
+						updateDropdownText()
+
+						_G.SavedConfig[settingID] = mod.Values[dName]
+						saveConfigToPC()
+
+						if dCallback then dCallback(mod.Values[dName]) end
+						if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
+					else
+						optFrame.Visible = false
+						mod.Values[dName] = opt
+
+						updateDropdownText()
+
+						_G.SavedConfig[settingID] = opt
+						saveConfigToPC()
+
+						if dCallback then dCallback(opt) end
+						if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
+					end
+				end)
+			end
+		end
+
+		dBtn.MouseButton1Click:Connect(function() 
+			optFrame.Visible = not optFrame.Visible 
+
+			if optFrame.Visible and not fullyPopulated then
+				fullyPopulated = true
+				buildOptions()
+			end
+		end)
+
+		-- Event Listeners for Player Dropdown
+		if isPlayerDropdown then
+			local pAdded = Players.PlayerAdded:Connect(function(plr)
+				if not table.find(options, plr.Name) then
+					table.insert(options, plr.Name)
+					if fullyPopulated then buildOptions() end
+				end
+			end)
+
+			local pRemoving = Players.PlayerRemoving:Connect(function(plr)
+				local idx = table.find(options, plr.Name)
+				if idx then
+					table.remove(options, idx)
+					if fullyPopulated then buildOptions() end
+				end
+
+				-- Reset value to nil if the selected player leaves
+				if multiSelect then
+					local selIdx = table.find(mod.Values[dName], plr.Name)
+					if selIdx then
+						table.remove(mod.Values[dName], selIdx)
+						updateDropdownText()
+						if dCallback then dCallback(mod.Values[dName]) end
 					end
 				else
-					dBtn.Text = "      - " .. dName .. ": " .. tostring(mod.Values[dName])
-				end
-			end
-
-			updateDropdownText() 
-			if dCallback then dCallback(mod.Values[dName]) end
-
-			-- OPTIMIZATION: Lazy-loading wrapper. Elements only generate when clicked open.
-			local fullyPopulated = false
-			dBtn.MouseButton1Click:Connect(function() 
-				optFrame.Visible = not optFrame.Visible 
-
-				if optFrame.Visible and not fullyPopulated then
-					fullyPopulated = true
-
-					-- Generate items dynamically
-					for i, opt in ipairs(options) do
-						-- CHUNKING: Yields every 100 items to prevent the client game engine from freezing
-						if i % 100 == 0 then
-							task.wait()
-						end
-
-						local optKey = tostring(opt)
-
-						-- Create container row container for Option + Favorite Star
-						local row = Instance.new("Frame", optFrame)
-						row.Size = UDim2.new(1, 0, 0, 24)
-						row.BackgroundTransparency = 1
-
-						-- Main Option Button
-						local oBtn = Instance.new("TextButton", row)
-						oBtn.Size = UDim2.new(1, -35, 1, 0) -- Leave space on the right for the star
-						oBtn.BackgroundTransparency = 1
-						oBtn.TextColor3 = Color3.fromRGB(120, 120, 120)
-						oBtn.TextXAlignment = Enum.TextXAlignment.Left
-						oBtn.TextSize = 18
-						oBtn.FontFace = Font.fromName(textFont)
-
-						-- Favorite Button (Star)
-						local favBtn = Instance.new("TextButton", row)
-						favBtn.Size = UDim2.new(0, 24, 0, 24)
-						favBtn.Position = UDim2.new(1, -28, 0, 0)
-						favBtn.BackgroundTransparency = 1
-						favBtn.TextSize = 16
-						favBtn.FontFace = Font.fromName(textFont)
-
-						local function updateVisual()
-							if multiSelect then
-								local isSelected = table.find(mod.Values[dName], opt)
-								oBtn.Text = (isSelected and "          > [x] " or "          > [ ] ") .. optKey
-								oBtn.TextColor3 = isSelected and Color3.new(1,1,1) or Color3.fromRGB(120, 120, 120)
-							else
-								oBtn.Text = "          > " .. optKey
-							end
-						end
-
-						-- SORTING LOGIC: Favorites get low LayoutOrders to push them to the very top
-						local function updateFavSort()
-							local isFav = favorites[optKey] == true
-							row.LayoutOrder = isFav and i or (10000 + i)
-							favBtn.Text = isFav and "★" or "☆"
-							favBtn.TextColor3 = isFav and Color3.fromRGB(254, 204, 34) or Color3.fromRGB(80, 80, 80)
-						end
-
-						updateVisual() 
-						updateFavSort()
-
-						-- Hover animations
-						oBtn.MouseEnter:Connect(function() 
-							tween(oBtn, {TextColor3 = Color3.new(1,1,1)}) 
-						end)
-
-						oBtn.MouseLeave:Connect(function() 
-							if multiSelect and table.find(mod.Values[dName], opt) then return end
-							tween(oBtn, {TextColor3 = Color3.fromRGB(120, 120, 120)}) 
-						end)
-
-						favBtn.MouseEnter:Connect(function()
-							if not favorites[optKey] then favBtn.TextColor3 = Color3.fromRGB(200, 200, 200) end
-						end)
-
-						favBtn.MouseLeave:Connect(function()
-							if not favorites[optKey] then favBtn.TextColor3 = Color3.fromRGB(80, 80, 80) end
-						end)
-
-						-- Favorite Click Handler
-						favBtn.MouseButton1Click:Connect(function()
-							favorites[optKey] = not favorites[optKey] or nil -- Toggles true/nil
-							_G.SavedConfig[favSettingID] = favorites
-							saveConfigToPC()
-							updateFavSort()
-						end)
-
-						-- Option Selection Click Handler
-						oBtn.MouseButton1Click:Connect(function()
-							if multiSelect then
-								local foundIdx = table.find(mod.Values[dName], opt)
-								if foundIdx then
-									table.remove(mod.Values[dName], foundIdx)
-								else
-									table.insert(mod.Values[dName], opt)
-								end
-
-								updateVisual()
-								updateDropdownText()
-
-								_G.SavedConfig[settingID] = mod.Values[dName]
-								saveConfigToPC()
-
-								if dCallback then dCallback(mod.Values[dName]) end
-								if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, mod.Values[dName]) end
-							else
-								optFrame.Visible = false
-								mod.Values[dName] = opt
-
-								updateDropdownText()
-
-								_G.SavedConfig[settingID] = opt
-								saveConfigToPC()
-
-								if dCallback then dCallback(opt) end
-								if mod.Callbacks.OnValueChanged then mod.Callbacks.OnValueChanged(dName, opt) end
-							end
-						end)
+					if mod.Values[dName] == plr.Name then
+						mod.Values[dName] = nil
+						updateDropdownText()
+						if dCallback then dCallback(nil) end
 					end
 				end
 			end)
+
+			-- Garbage Collection: Destroy events instantly when the UI is deleted
+			dropCont.Destroying:Connect(function()
+				pAdded:Disconnect()
+				pRemoving:Disconnect()
+			end)
 		end
+	end
 
 		function mod:CreateKeybind(kName, defaultKey, kCallback)
 			local settingID = uniquePrefix .. "_" .. kName
@@ -2586,7 +2652,7 @@ end
 	AutoPearl:CreateSlider("Void range", 1, 250, 100, nil)
 	AutoPearl:CreateSlider("Shoot Duration", 0, 1, 0.25, nil)
 
-	local VoidDrop = Utility:CreateButton("Void Drop", nil, true)
+	VoidDrop = Utility:CreateButton("Void Drop", nil, true)
 	VoidDrop:CreateSlider("Void range", 1, 250, 100, nil)
 	VoidDrop:CreateToggle("During Balloons")
 	VoidDrop:CreateToggle("During Whisper Fly")
@@ -2600,7 +2666,7 @@ end
 		end
 	end)
 
-	local AutoQueue = Utility:CreateButton("Auto Queue", nil, true)
+	AutoQueue = Utility:CreateButton("Auto Queue", nil, true)
 	AutoQueue:CreateSlider("Delay", 0.1, 5, 1, nil, 0.1)
 	local AutoEmote = Utility:CreateButton("Auto Emote", nil, true)
     AutoEmote:CreateDropdown("Emote Type", emotes, "nightmare_1")
@@ -2697,14 +2763,23 @@ end
 	Kits:CreateButton("Auto Lassy", nil, true)
 	Kits:CreateButton("Auto Adetunde", nil, true)
 	Kits:CreateButton("Auto Styx", nil, true)
-	Kits:CreateButton("Auto Melody", nil, true)
-	Kits:CreateButton("Auto Fish", nil, true)
+	AutoMelody = Kits:CreateButton("Auto Melody", nil, true)
+	AutoMelody:CreateSlider("Range", 1, 48, 36, nil, 0.5)
+	AutoMelody:CreateDropdown("Player To Heal", {}, nil, nil, false, true)
+	AutoFish = Kits:CreateButton("Auto Fish", nil, true)
 	AutoKaliyah = Kits:CreateButton("Auto Kaliyah", nil, true)
 	AutoKaliyah:CreateSlider("Range", 1, 1000, 14.4, nil, 0.1)
 	AutoKaliyah:CreateToggle("Use Punch Animation", true, nil)
 	Kits:CreateButton("Auto Lani", nil, true)
 	Kits:CreateButton("Auto Caitlyn", nil, true)
-    Kits:CreateButton("Auto Bounty Hunter", nil, true)
+	Kits:CreateButton("Auto Bounty Hunter", nil, true)
+	
+	ZoomUnlocker = GameTab:CreateButton("Zoom Unlocker", nil, true)
+	ZoomUnlocker:CreateSlider("Max Zoom Distance", 1, 100, 2, function(state)
+		if loops["zoom unlocker"] then
+			Player.CameraMaxZoomDistance = state
+		end
+	end)
 
 	PhaseButton.Callbacks.OnToggle = function(state)
 		loops["phase"] = state
@@ -6068,3 +6143,71 @@ task.spawn(function()
 		end
 	end
 end)
+
+AutoFish.Callbacks.OnToggle = function(state)
+	loops["auto fish"] = state
+end
+
+
+ZoomUnlocker.Callbacks.OnToggle = function(state)
+	loops["zoom unlocker"] = state 
+	
+	if loops["zoom unlocker"] then
+		Player.CameraMaxZoomDistance = ZoomUnlocker.Values["Max Zoom Distance"]
+	else
+		Player.CameraMaxZoomDistance = 14
+
+	end
+end
+
+AutoMelody.Callbacks.OnToggle = function(state)
+	loops["auto melody"] = state 
+
+	if state then
+		task.spawn(function()
+			while loops["auto melody"] do
+				task.wait(0.1)
+
+				if not Character then continue end
+
+				local rootPart = Character:FindFirstChild("HumanoidRootPart")
+				local humanoid = Character:FindFirstChild("Humanoid")
+				local handInvItem = Character:FindFirstChild("HandInvItem")
+
+				if not rootPart or not humanoid or humanoid.Health <= 0 or not handInvItem or not handInvItem.Value then 
+					continue 
+				end
+
+				local equippedTool = handInvItem.Value.Name
+
+				if equippedTool == "guitar" then 
+					local healTarget = AutoMelody.Values["Player To Heal"]
+
+					if healTarget == nil or healTarget == "" or healTarget == "None" then
+						local args = {
+							"melody_heal"
+						}
+						game:GetService("ReplicatedStorage"):WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events"):WaitForChild("useAbility"):FireServer(unpack(args))
+					else
+						local target = game.Players:FindFirstChild(healTarget)
+
+						if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+							local targetRoot = target.Character.HumanoidRootPart
+							local distance = (rootPart.Position - targetRoot.Position).Magnitude
+
+							if distance <= (AutoMelody.Values["Range"] or 20) then
+								local args = {
+									{
+										healTarget = target.Character
+									}
+								}
+
+								game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("PlayGuitar"):FireServer(unpack(args))
+							end
+						end
+					end
+				end
+			end
+		end)
+	end
+end
