@@ -1,9 +1,778 @@
+local varStorage = {}
+setmetatable(_ENV, {
+	__index = varStorage,
+	__newindex = varStorage
+})
+
+local chatQueue = {}
+local queueActive = false
+
+local emotes = {
+	"academy_aery_gl",
+	"academy_aery_read",
+	"academy_killer_instinct",
+	"adetunde_annoyed",
+	"adetunde_cold",
+	"adetunde_new_years_2025",
+	"aery_hmph",
+	"aery_killer_instinct",
+	"aery_out_of_breath",
+	"aery_pro",
+	"aery_sob",
+	"aery_thinking",
+	"aery_winstreak",
+	"afk",
+	"afk_teammate",
+	"agni_angry",
+	"agni_boom",
+	"agni_warming",
+	"alchemist_dizzy",
+	"alchemist_evil",
+	"alchemist_pumpkin_stew",
+	"alchemist_sad",
+	"alchemist_yap",
+	"all_good",
+	"amy_easter_murder",
+	"amy_easter_no_iron",
+	"amy_floatie",
+	"amy_hello",
+	"amy_no",
+	"amy_silent",
+	"angry_builder",
+	"arachne_ohmy",
+	"archer",
+	"archer_cheers",
+	"archer_glare",
+	"archer_thumbs_down",
+	"arson",
+	"assassin",
+	"axolotl_sleeping",
+	"axolotls",
+	"baby_dodo",
+	"baker_baking",
+	"baker_cooking",
+	"baker_holiday_eat",
+	"baker_item_prot",
+	"baker_nooo",
+	"baker_piece_of_cake",
+	"baker_profit",
+	"baker_protection",
+	"baker_sad",
+	"baker_seriously",
+	"baker_sly",
+	"baker_sus_stew",
+	"baker_thumbs_up",
+	"baking_gingerbread",
+	"balloons",
+	"banana_barbarian",
+	"barb_angry",
+	"barb_menacing",
+	"barb_pin",
+	"barb_u_shall_not_pass",
+	"barb_xmas_lights",
+	"barbarian_enraged",
+	"barbarian_on_fire",
+	"barbarian_rageblade_master",
+	"barbarian_wave",
+	"bathing_in_money",
+	"beach_vacation",
+	"beach_volley_ball",
+	"bed_break",
+	"bed_breaker",
+	"bed_king",
+	"bee",
+	"bee_cute",
+	"bee_keeper_peace",
+	"bee_keeper_stare",
+	"bee_keeper_thanks",
+	"beekeeper_emerald",
+	"beekeeper_gift",
+	"bing_chilling",
+	"blackhole",
+	"blah_blah_animated",
+	"bongo_cat_freiya",
+	"boo",
+	"book_read",
+	"bot_scared",
+	"bounty_hunter",
+	"bounty_hunter_hunt",
+	"bounty_mad",
+	"brain_loading",
+	"brb",
+	"bruh",
+	"builder_bleh",
+	"builder_cry",
+	"builder_hammer",
+	"builder_help",
+	"builder_help_pls",
+	"builder_idea",
+	"builder_leave_door",
+	"builder_lny",
+	"builder_nutcracker_lethal",
+	"builder_rage",
+	"builder_ready",
+	"builder_red_envelope",
+	"builder_sheesh",
+	"builder_sparkle",
+	"builder_speechless",
+	"bunny_barbarian_question",
+	"bunny_side_to_side",
+	"bunny_taliyah",
+	"bunny_taliyah_tnt",
+	"burning_the_bed",
+	"caitlyn_rock",
+	"camera",
+	"candy_please",
+	"card",
+	"cat_autumn",
+	"cat_cute",
+	"cat_deal",
+	"cat_friend",
+	"cat_gun",
+	"cat_swipe",
+	"caught_you",
+	"cheers_bottle",
+	"chicken_attack",
+	"chilly",
+	"chrismas_carol",
+	"christmas_carol",
+	"christmas_dodo",
+	"christmas_eldertree",
+	"christmas_rocket",
+	"christmas_tree",
+	"chunky_elder_tree",
+	"clan_invite",
+	"cletus_aeugh",
+	"cletus_burned_crops",
+	"cletus_carrot",
+	"cletus_nerd",
+	"cletus_plushie",
+	"cletus_troll",
+	"cobalt_charged",
+	"cobalt_low_battery",
+	"cogsworth_charmed",
+	"cogsworth_ignored",
+	"cogsworth_sorry",
+	"coin_fountain",
+	"coin_toss",
+	"conga_line",
+	"conqueror_fireball",
+	"conqueror_smirk",
+	"controlling_reaper",
+	"cookie_tree",
+	"corrupted_rage_blade",
+	"cozy_melody_smile",
+	"crab_dance",
+	"crocowolf_you_cant_run",
+	"cry_about_it",
+	"crypt_skull",
+	"cryptwrecked_salute",
+	"cute_grim_reaper",
+	"cyber_dab",
+	"cyber_defense",
+	"cyber_mad",
+	"cyber_overheat",
+	"dance_1",
+	"dance_2",
+	"dance_3",
+	"davey_win",
+	"de_vanessa_speechless",
+	"dead_baker",
+	"dead_to_me",
+	"dessert_marina",
+	"diamond_guardian",
+	"dino_hai",
+	"dino_rawr",
+	"dino_yipeee",
+	"disco",
+	"disco_dance",
+	"dodo_evelynn_anniversary",
+	"dodo_plump",
+	"dom_im_done",
+	"dont_rush_me_pls",
+	"dragon_angry",
+	"dragon_kit_battle",
+	"dragon_kit_duel",
+	"dragon_kit_stare",
+	"dragon_roar",
+	"dropped_this_crown",
+	"duck_celebration",
+	"duck_walk",
+	"duo",
+	"dv_500k",
+	"easter_bunny",
+	"easter_davey",
+	"easter_freiya_danger",
+	"easter_freiya_omg",
+	"easter_grim_laughing",
+	"easter_grim_quiet",
+	"easter_grove_awe",
+	"easter_taliyah",
+	"easter_uma_happy",
+	"easter_uma_love",
+	"egg_hunt_dance_emote",
+	"elder_reef",
+	"elder_tree",
+	"elder_tree_injured",
+	"eldertree_fury",
+	"eldertree_gg",
+	"elektra_power_up",
+	"elektra_tp",
+	"elektra_wrath",
+	"emerald_armor",
+	"emerald_chest",
+	"evelynn_adore",
+	"evelynn_denial",
+	"evelynn_heartbreak",
+	"evelynn_i_feel_amazing",
+	"evelynn_shock",
+	"evelynn_stressed",
+	"face_palm",
+	"farmer_angry",
+	"farmer_clean",
+	"farmer_cletus_farm_spamming",
+	"farmer_cletus_water_gun",
+	"farmer_cry",
+	"farmer_not_bad",
+	"farmer_pushed",
+	"farmer_silenced",
+	"fire_dragon_sip",
+	"fire_dragon_what",
+	"fire_dragon_win_streak",
+	"fisherman",
+	"fisherman_absolute_cinema",
+	"fisherman_doze",
+	"fisherman_gold",
+	"fisherman_smile",
+	"flora_icon",
+	"flowers_for_you",
+	"freiya",
+	"freiya_2",
+	"freiya_3",
+	"freiya_beg",
+	"freiya_hearts",
+	"freiya_nyan_cat",
+	"freiya_pop_cat",
+	"freiya_salad_meme",
+	"freiya_snowman",
+	"freiya_surprised",
+	"freiya_sus",
+	"friendship_slimes",
+	"frosty_baller",
+	"frosty_fury",
+	"frosty_silly",
+	"funky_dance",
+	"get_trapped",
+	"ghost_catcher_in_love",
+	"ghost_celebrate",
+	"ghost_davey",
+	"ghost_ready",
+	"gingerbread_cozy",
+	"gingerbread_man_rage",
+	"gingerbreads_nightmare",
+	"gompy_caught_in_4k",
+	"gompy_rock",
+	"gompy_scared",
+	"gompy_scary",
+	"good_whisper",
+	"goodnight_dance",
+	"griddy",
+	"grim_reaper_gg",
+	"grim_reaper_lantern",
+	"grim_reaper_scythe",
+	"grim_reaper_sticker",
+	"grim_reaper_taunt",
+	"grim_skull_emoji",
+	"grim_skull_harvester",
+	"grim_thriller",
+	"grinch_milo",
+	"grinch_milo_2024",
+	"grumpy_barbunny",
+	"hannah_angry",
+	"hannah_fear",
+	"hannah_fired_up",
+	"hannah_ghost_moment",
+	"hannah_ghosted",
+	"hannah_sorry_not",
+	"happy_gompy",
+	"happy_sophia",
+	"hats_off",
+	"hatter_gg",
+	"hatter_heart",
+	"hatter_shy",
+	"headless_cletus",
+	"heads_off",
+	"heal_slime_sad",
+	"heart",
+	"hmm_ok",
+	"holiday_sheepherder_bell",
+	"hw_yuzi_laugh",
+	"hw_yuzi_pin",
+	"i_see_you",
+	"ice_cream_trio",
+	"ice_skating",
+	"icy_delight",
+	"ignis_bridge_summon",
+	"im_okay",
+	"image_default",
+	"incarnation_grim_reaper",
+	"infernal_surfer_wink",
+	"injured_gingerbread",
+	"isabel_stunned",
+	"jack_trick_or_treat",
+	"jade_bonking",
+	"jade_gg",
+	"jade_heart",
+	"jade_im_the_best",
+	"jade_laugh",
+	"jade_sad",
+	"jade_vampire",
+	"kaida_domain_expansion",
+	"kaida_glare",
+	"kaida_laugh",
+	"kaida_mock",
+	"kaida_serious_summon",
+	"kaida_witch_apple",
+	"kaliyah_angry",
+	"kaliyah_fired_up",
+	"kaliyah_new_years_23",
+	"kaliyah_pumped",
+	"kaliyah_pumped_up",
+	"kaliyah_punch",
+	"kaliyah_rage",
+	"kazotsky_kick",
+	"kicker_angry",
+	"killer_amy",
+	"kit_mastery_emote",
+	"knights_bow",
+	"krampus_ember",
+	"krystal_broken_heart",
+	"lani_idk",
+	"lani_point",
+	"lassy_approve",
+	"lassy_capture",
+	"lassy_celebration",
+	"lassy_cry",
+	"lassy_emeralds",
+	"lassy_fan",
+	"lassy_grab",
+	"lassy_heal",
+	"lassy_shocked",
+	"lassy_side_eye",
+	"lassy_stop",
+	"lian_dumpling_eat",
+	"lian_lny_celebrate",
+	"lifeguard_lassy_chilling",
+	"lifeguard_lassy_warning",
+	"lny_2022",
+	"love_struck_vanessa",
+	"lucia_candy",
+	"lucia_pathetic",
+	"lucia_throw",
+	"lucia_whats_poppin",
+	"lucky_gift",
+	"lumen_confused",
+	"lumen_pain",
+	"lumen_reverse_card",
+	"lunar_dragon_archer",
+	"lunar_freiya_cat",
+	"lunar_freiya_celebration",
+	"lunar_hannah_fireworks",
+	"lunar_tiger_builder",
+	"lunar_xurot_meme",
+	"luxury_chair",
+	"lv50_duo_wombo_combo",
+	"lyla_flowers",
+	"lyla_letter_read",
+	"lyla_popcorn",
+	"lyla_sad",
+	"lyla_sus",
+	"mage_elemental",
+	"map_contest_winner",
+	"marcel_time",
+	"marco_diamond_sword",
+	"marco_inspect",
+	"marco_villager",
+	"marina_angry",
+	"marina_blow_bubbles",
+	"marina_eh",
+	"marina_floating",
+	"marina_happy",
+	"marina_huh",
+	"marina_icecream",
+	"marina_panic",
+	"marina_surprised",
+	"marshmallow_roast",
+	"martin_hydrate",
+	"martin_plush",
+	"mean_girls",
+	"melody_broke",
+	"melody_cheer",
+	"melody_diamond",
+	"melody_face_palm",
+	"melody_flowers_for_you",
+	"melody_noted",
+	"melody_peace_out",
+	"melody_stop",
+	"melody_suprised",
+	"melody_surprised",
+	"melody_tunes",
+	"melody_you_rock",
+	"merchant_marco_quick_sand",
+	"metal_detector",
+	"metal_detector_boring",
+	"metal_detector_egg",
+	"metal_detector_lets_go_looting",
+	"mic_up",
+	"milo_bug_spray",
+	"milo_crazy",
+	"milo_god",
+	"milo_hello",
+	"milo_ice_cream",
+	"milo_sandcastle",
+	"milo_scare",
+	"milo_sleep",
+	"milo_snack",
+	"milo_splash",
+	"milo_yippee",
+	"miner_laugh",
+	"miner_snore",
+	"miner_uwu",
+	"mischief_valentines_evelynn",
+	"moai_yeti",
+	"monk_meditation",
+	"mountain_cool",
+	"mummy",
+	"nahla_prowler",
+	"nalha_prowler",
+	"necromancer_summon",
+	"new_years_2024",
+	"new_years_2025",
+	"new_years_2026",
+	"nice",
+	"nightmare_1",
+	"nightmare_davey_flex",
+	"nightmare_davey_think",
+	"nightmare_grim_reaper",
+	"nightmare_lyla",
+	"nightmare_season_6",
+	"nightmare_triton",
+	"nightmare_zeno",
+	"no_bully",
+	"no_candy",
+	"noelle_butterfly",
+	"noelle_confused",
+	"noelle_doll",
+	"noelle_slimes",
+	"noelle_surrender",
+	"noelle_well_done",
+	"nogift_lassy",
+	"none",
+	"nutcracker_builder_panic",
+	"nyx_angy",
+	"nyx_boba",
+	"oasis_l",
+	"oasis_relaxed",
+	"oasis_water_splash",
+	"oh_my_stars",
+	"paper_lantern_release",
+	"party_up",
+	"pengion_disco",
+	"penguin_deal_with_it",
+	"penguin_disco",
+	"penguin_fall",
+	"penguin_king_trophy",
+	"penguin_punch",
+	"penguin_sleep",
+	"penguin_sniper",
+	"pillow_fight",
+	"pinanta_party_time",
+	"pinata_party_time",
+	"pirate_balloons",
+	"pirate_treasure",
+	"pirates_goodbye",
+	"popcorn",
+	"pumpkin_bomb",
+	"push_up_glasses",
+	"push_up_glassses",
+	"pyro_celebrate",
+	"pyro_coal",
+	"pyro_exhausted",
+	"rabbit_hat_trick",
+	"rage_blade",
+	"rageblade_swords",
+	"rain_dance",
+	"raining_gems",
+	"ramil_angry_kitty",
+	"ramil_palm_of_my_hand",
+	"ramil_sandbender",
+	"raven_flower",
+	"raven_hmm",
+	"raven_knife",
+	"raven_ok",
+	"raven_plan",
+	"raven_rip",
+	"raven_sketch",
+	"ready_up",
+	"reaper_gift",
+	"reaper_got_em",
+	"reaper_smile",
+	"rebellion_leader_dodo",
+	"red_envelope",
+	"reindeer_lassy",
+	"rise_up",
+	"robo_sparkle",
+	"robo_work",
+	"rock_out",
+	"rock_paper_scissors",
+	"rotten_egg",
+	"sad_gompy",
+	"sandbender_peace",
+	"sandbender_sad",
+	"sandwich_farmer",
+	"searching_far_away",
+	"selfie",
+	"sheep_herder_birthday",
+	"sheep_herder_love",
+	"sheep_herder_new_years_23",
+	"sheila_cozy",
+	"sheila_new_years",
+	"sheila_sing",
+	"sheila_volleyball",
+	"shielder_clap",
+	"side_to_side",
+	"silence",
+	"silly_legs_dance",
+	"skeleton_omg",
+	"skeleton_party",
+	"skoll_let_me_think",
+	"skoll_wolf_treat",
+	"slay",
+	"sleep",
+	"slow_clap",
+	"smoke_again",
+	"smoke_dissapointed",
+	"smoke_dude",
+	"smoke_peace_out",
+	"smoke_red_flag",
+	"smoke_vanish",
+	"smoke_wave",
+	"smug",
+	"sophia_bro",
+	"sorcerer_aura",
+	"sorcerer_laugh",
+	"sorcerer_oops",
+	"sorcerer_rage",
+	"sorcery_duo",
+	"space_miner_rage",
+	"spirit_assassin_dagger",
+	"spirit_assassin_hearts",
+	"spirit_assassin_top_assassin",
+	"spirit_catacher_lol",
+	"spirit_catacher_target_shot",
+	"spirit_catcher_lol",
+	"spirit_catcher_phone_shock",
+	"spirit_catcher_stare",
+	"spirit_catcher_target_shot",
+	"spirit_couple",
+	"spirit_critter_please",
+	"spirit_critter_stare",
+	"spirit_critter_whatchu_doin",
+	"spirit_critter_wow",
+	"spirit_duo_ez",
+	"spirit_gardener_flower_basket",
+	"spirit_gardener_sob",
+	"spirit_gardener_take_them_please",
+	"spirit_new_years_23",
+	"spirit_owl",
+	"spirit_teamwork",
+	"spooky",
+	"star_collector_chocolate_bunny",
+	"star_collector_dazed",
+	"star_collector_fun",
+	"stella_birthday",
+	"stella_bored",
+	"stella_heart",
+	"stella_idol",
+	"stella_nu_uh",
+	"stella_omg",
+	"stella_star_for_you",
+	"stocking",
+	"sturdy",
+	"styx_relax",
+	"styx_sad",
+	"summer_infernal_shielder_cheers",
+	"summon_snow",
+	"summoner_dragon_buddy",
+	"summoner_summon",
+	"surfer_cool_guy",
+	"surfer_hot",
+	"surfer_rizz",
+	"surfer_surfs_up",
+	"surprise_attack",
+	"surrender",
+	"sword_twirl",
+	"tablet_kids",
+	"take_selfie",
+	"taliyah_eat",
+	"taliyah_flushed",
+	"taliyah_heart_hands",
+	"taliyah_mischievous",
+	"taliyah_mizu5",
+	"taliyah_rainbow",
+	"taliyah_sparkle",
+	"teamwork",
+	"terra_buff",
+	"terra_intimidation",
+	"terra_ping",
+	"terra_powerup",
+	"tesla_danger",
+	"thirsty",
+	"three_year_baker",
+	"three_year_barbarian",
+	"three_year_bekzat",
+	"three_year_cake_face",
+	"three_year_lyla",
+	"three_year_taliyah",
+	"thriller",
+	"tidal_wren_cheers",
+	"tidal_wren_shiny",
+	"tiger_well_played",
+	"tinker_amazing",
+	"tnt",
+	"to_battle",
+	"too_much_yapping",
+	"tournament_winner",
+	"trader_donate",
+	"trader_huh",
+	"trapper_point",
+	"trapper_proud",
+	"trapper_warning",
+	"trick_or_treat",
+	"trinity_eat_popcorn",
+	"trinity_punch",
+	"trinity_thumbs_up",
+	"trinity_toilet",
+	"trinity_two_sides",
+	"trixie_clown",
+	"trixie_haha",
+	"trixie_mock",
+	"trixie_peek",
+	"two_year_baker",
+	"two_year_barb",
+	"two_year_bee",
+	"two_year_lucia",
+	"two_year_spirit",
+	"two_year_star_collector",
+	"twoyear_penguin_cake",
+	"umbra_villain",
+	"valentine_aery_love",
+	"valentine_aery_queen",
+	"vanessa_deserve",
+	"victorious_beta",
+	"victorious_celebration_season_6",
+	"void_dragon_angry",
+	"void_dragon_art",
+	"void_hunter_absorb",
+	"void_knight",
+	"void_knight_absorb",
+	"void_knight_sword",
+	"void_meditation",
+	"void_slime_pat",
+	"void_terra_thumbs_up",
+	"void_tranquility",
+	"vulcan_ask",
+	"vulcan_brainfreeze",
+	"vulcan_error",
+	"vulcan_get_real",
+	"vulcan_gg",
+	"vulcan_grave",
+	"vulcan_heart",
+	"vulcan_lantern",
+	"vulcan_lets_go",
+	"vulcan_loading",
+	"vulcan_overheat",
+	"waiting_on_iron",
+	"walk_like_egyptian",
+	"warrior_update_day",
+	"wasnt_me",
+	"what_did_i_see",
+	"whim_reading",
+	"whisper_chicken",
+	"whisper_owl",
+	"whisper_speech",
+	"whisper_unamused",
+	"wiggle",
+	"winstreak",
+	"winstreak_plus_one",
+	"witch_laugh",
+	"witch_nom",
+	"witchs_wrath",
+	"withered_eldertree",
+	"wizard_reading_you",
+	"worm_farmer",
+	"wren_coffin",
+	"wren_laugh",
+	"wren_trick_or_treat",
+	"wrens_gift",
+	"wrens_nightmare",
+	"xmas_aery",
+	"xmas_lassy_catch",
+	"xurot_dissapointed",
+	"yamini_cat_loaf",
+	"yamini_point",
+	"yamini_sly",
+	"yawn",
+	"yeti_gift",
+	"youre_wanted",
+	"yuzi_angry",
+	"yuzi_bee_swarm",
+	"yuzi_brb",
+	"yuzi_copium",
+	"yuzi_firecrackers",
+	"yuzi_flip",
+	"yuzi_hype",
+	"yuzi_lny_lanterns",
+	"yuzi_love_chu",
+	"yuzi_red_envelope",
+	"yuzi_snake_pet",
+	"zarrah_love",
+	"zarrah_summer_rad",
+	"zen_hover",
+	"zephyr_begone",
+	"zephyr_going_fast",
+	"zephyr_smug",
+	"zephyr_stressed",
+	"zephyr_what",
+	"zephyr_yelling",
+	"zombie_barbarian",
+	"zombie_jade",
+	"zombie_melody",
+}
+local startEmote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Emote")
+local DamageBlock = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
+local NetRemotes = game.ReplicatedStorage.rbxts_include.node_modules["@rbxts"].net.out._NetManaged
+local DeathEvent = NetRemotes:WaitForChild("EntityDeathEvent")
+local BedBreakEvent = NetRemotes:WaitForChild("BedwarsBedBreak")
+local EmoteAnimationData = {
+	["nightmare_1"] = "rbxassetid://9191822700",
+	["elektra_tp"] = "rbxassetid://111276122370210",
+	["disco_dance"] = "rbxassetid://12510308591",
+	["goodnight_dance"] = "rbxassetid://18881167004",
+	["griddy"] = "rbxassetid://18880977516"
+}
+if DamageBlock then
+	DamageBlock = DamageBlock.node_modules["@easy-games"]["block-engine"].node_modules["@rbxts"].net.out._NetManaged:FindFirstChild("DamageBlock")
+end
+
+
+	
 	local replicatedStorage = game:GetService("ReplicatedStorage")
 	local HttpService = game:GetService("HttpService")
 	local UserInputService = game:GetService("UserInputService")
 	local RunService = game:GetService("RunService")
 
-	local FILE_NAME = "FW_AutoSave_Config.json"
+	local FILE_NAME = "FWWW_AutoSave_Config.json"
 
 	local takeItem = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Inventory/ChestGetItem")
 
@@ -59,7 +828,18 @@
 		["kaidaka"] = false,
 		["infinite_jump"] = false,
 		["climber"] = false,
-		["phase"] = false
+		["phase"] = false,
+		["fast break"] = false,
+		["esp"] = false,
+		["auto emote"] = false,
+		["auto grim repear"] = false,
+		["auto star"] = false,
+		["auto metal"] = false,
+		["auto hannah"] = false,
+		["auto warden"] = false,
+		["auto miner"] = false,
+		["auto kaliyah"] = false,
+		["auto toxic"] = false
 	}
 
 	local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
@@ -155,7 +935,17 @@
 		"noctium_blade",
 		"noctium_blade_2",
 		"noctium_blade_3",
-		"noctium_blade_4"
+		"noctium_blade_4",
+		"tinker_weapon_1",
+		"tinker_weapon_2",
+		"tinker_weapon_3",
+		"tinker_weapon_4",
+		"tinker_weapon_5",
+		"wood_gun_blade",
+		"stone_gun_blade",
+		"iron_gun_blade",
+		"diamond_gun_blade",
+		"emerald_gun_blade"
 	}
 
 	local weaponTiers = {
@@ -218,26 +1008,35 @@
 	local resetTask = nil
 
 	local ReplicatedStorage = game:GetService("ReplicatedStorage")
+	local ConsumeSoulRemote = NetRemotes:WaitForChild("ConsumeGrimReaperSoul")
 	local SwordHitRemote = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts").net.out:WaitForChild("_NetManaged"):WaitForChild("SwordHit")
+	local HannahRemote = NetRemotes:WaitForChild("HannahPromptTrigger")
+	local PurchaseItem = NetRemotes:WaitForChild("BedwarsPurchaseItem")
+	local SetInvItem = NetRemotes:WaitForChild("SetInvItem")
+	local SetArmorInvItem = NetRemotes:WaitForChild("SetArmorInvItem")
+	local TeamUpgrade = NetRemotes:WaitForChild("RequestPurchaseTeamUpgrade")
 
+	local hannahTargetsProcessing = {}
 	local inventoriesFolder = ReplicatedStorage:WaitForChild("Inventories")
 
-	local netManaged = ReplicatedStorage:WaitForChild("rbxts_include")
-		:WaitForChild("node_modules")
-		:WaitForChild("@rbxts")
-		:WaitForChild("net")
-		:WaitForChild("out")
-		:WaitForChild("_NetManaged")
-	local setInvItem = netManaged:WaitForChild("SetInvItem")
-	local matchEndEvent = netManaged:WaitForChild("MatchEndEvent")
+	
+	local setInvItem = NetRemotes:WaitForChild("SetInvItem")
+	local matchEndEvent = NetRemotes:WaitForChild("MatchEndEvent")
 	local startQueue = game:GetService("ReplicatedStorage"):WaitForChild("events-@easy-games/lobby:shared/event/lobby-events@getEvents.Events"):WaitForChild("joinQueue")
 	local emoteModuleScript = ReplicatedStorage:WaitForChild("TS")
 		:WaitForChild("locker")
 		:WaitForChild("emote")
 		:WaitForChild("emote-type")
+	local CollectRemote = NetRemotes:WaitForChild("CollectCollectableEntity")
+	local activeWardenSouls = {}
+	local DestroyPetrifiedRemote = NetRemotes:WaitForChild("DestroyPetrifiedPlayer")
 
-	--local emoteTypes = require(emoteModuleScript)
-	local setArmorRemote = netManaged:WaitForChild("SetArmorInvItem")
+	local activePetrifiedPlayers = {}
+	
+	local PunchRemote = NetRemotes:WaitForChild("RequestDragonPunch")
+	local kaliyahTargetsProcessing = {}
+
+	local setArmorRemote = NetRemotes:WaitForChild("SetArmorInvItem")
 	local itemsFolder = ReplicatedStorage:WaitForChild("Items")
 
 	local emoteOptions = {}
@@ -254,7 +1053,7 @@
 	table.sort(emoteOptions)]]--
 
 
-	local setInvItem = netManaged:WaitForChild("SetInvItem")
+	local setInvItem = NetRemotes:WaitForChild("SetInvItem")
 	local playerInventory = inventoriesFolder:WaitForChild(game.Players.LocalPlayer.Name)
 
 	local t_find = table.find
@@ -290,8 +1089,6 @@
 	local localRootPart = Character:WaitForChild("HumanoidRootPart")
 	local humanoid = Character:WaitForChild("Humanoid")
 
-	local animator = humanoid:WaitForChild("Animator")
-
 	local fireProjectileEvent = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("ProjectileFire")
 
 	local currentTarget = nil
@@ -299,7 +1096,6 @@
 	local currentTrack = nil
 
 	local TweenService = game:GetService("TweenService")
-	local Debris = game:GetService("Debris")
 
 	local textFont = "Zekton"
 	local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -1159,71 +1955,211 @@
 			end)
 		end
 
-		function mod:CreateColorPicker(cName, defaultColor, cCallback)
-			local settingID = uniquePrefix .. "_" .. cName
+	function mod:CreateColorPicker(cName, defaultColor, cCallback)
+		local settingID = uniquePrefix .. "_" .. cName
 
-			if _G.SavedConfig[settingID] ~= nil then
-				local savedRGB = _G.SavedConfig[settingID]
-				defaultColor = Color3.fromRGB(savedRGB.R / 255, savedRGB.G / 255, savedRGB.B / 255)
-			else
-				_G.SavedConfig[settingID] = {R = math.floor(defaultColor.R * 255), G = math.floor(defaultColor.G * 255), B = math.floor(defaultColor.B * 255)}
-			end
-
-			local cFrame = Instance.new("Frame", settingsCont)
-			cFrame.Size = UDim2.new(1, 0, 0, 45)
-			cFrame.BackgroundTransparency = 1
-
-			local lbl = Instance.new("TextLabel", cFrame)
-			lbl.Text = "      " .. cName
-			lbl.Size = UDim2.new(0.5, 0, 1, 0)
-			lbl.BackgroundTransparency = 1
-			lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
-			lbl.TextSize = 18
-			lbl.TextXAlignment = Enum.TextXAlignment.Left
-			lbl.FontFace = Font.fromName(textFont)
-
-			local rSlider = Instance.new("TextBox", cFrame)
-			rSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
-			rSlider.Position = UDim2.new(0.5, 0, 0.25, 0)
-			rSlider.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
-			rSlider.TextColor3 = Color3.new(1,1,1)
-			rSlider.Text = tostring(math.floor(defaultColor.R * 255))
-			uiCorner(rSlider, 4)
-
-			local gSlider = Instance.new("TextBox", cFrame)
-			gSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
-			gSlider.Position = UDim2.new(0.65, 0, 0.25, 0)
-			gSlider.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
-			gSlider.TextColor3 = Color3.new(1,1,1)
-			gSlider.Text = tostring(math.floor(defaultColor.G * 255))
-			uiCorner(gSlider, 4)
-
-			local bSlider = Instance.new("TextBox", cFrame)
-			bSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
-			bSlider.Position = UDim2.new(0.8, 0, 0.25, 0)
-			bSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
-			bSlider.TextColor3 = Color3.new(1,1,1)
-			bSlider.Text = tostring(math.floor(defaultColor.B * 255))
-			uiCorner(bSlider, 4)
-
-			if cCallback then cCallback(defaultColor) end
-
-			local function updateColor()
-				local r = math.clamp(tonumber(rSlider.Text) or 255, 0, 255)
-				local g = math.clamp(tonumber(gSlider.Text) or 255, 0, 255)
-				local b = math.clamp(tonumber(bSlider.Text) or 255, 0, 255)
-				rSlider.Text, gSlider.Text, bSlider.Text = tostring(r), tostring(g), tostring(b)
-
-				_G.SavedConfig[settingID] = {R = r, G = g, B = b}
-				saveConfigToPC()
-
-				if cCallback then cCallback(Color3.fromRGB(r, g, b)) end
-			end
-
-			rSlider.FocusLost:Connect(updateColor)
-			gSlider.FocusLost:Connect(updateColor)
-			bSlider.FocusLost:Connect(updateColor)
+		if _G.SavedConfig[settingID] ~= nil then
+			local savedRGB = _G.SavedConfig[settingID]
+			defaultColor = Color3.fromRGB(savedRGB.R / 255, savedRGB.G / 255, savedRGB.B / 255)
+		else
+			_G.SavedConfig[settingID] = {R = math.floor(defaultColor.R * 255), G = math.floor(defaultColor.G * 255), B = math.floor(defaultColor.B * 255)}
 		end
+
+		local cFrame = Instance.new("Frame", settingsCont)
+		cFrame.Size = UDim2.new(1, 0, 0, 45)
+		cFrame.BackgroundTransparency = 1
+
+		local lbl = Instance.new("TextLabel", cFrame)
+		lbl.Text = "      " .. cName
+		lbl.Size = UDim2.new(0.5, 0, 1, 0)
+		lbl.BackgroundTransparency = 1
+		lbl.TextColor3 = Color3.fromRGB(180, 180, 180)
+		lbl.TextSize = 18
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.FontFace = Font.fromName(textFont)
+
+		local rSlider = Instance.new("TextBox", cFrame)
+		rSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
+		rSlider.Position = UDim2.new(0.5, 0, 0.25, 0)
+		rSlider.BackgroundColor3 = Color3.fromRGB(100, 40, 40)
+		rSlider.TextColor3 = Color3.new(1,1,1)
+		rSlider.Text = tostring(math.floor(defaultColor.R * 255))
+		uiCorner(rSlider, 4)
+
+		local gSlider = Instance.new("TextBox", cFrame)
+		gSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
+		gSlider.Position = UDim2.new(0.65, 0, 0.25, 0)
+		gSlider.BackgroundColor3 = Color3.fromRGB(40, 100, 40)
+		gSlider.TextColor3 = Color3.new(1,1,1)
+		gSlider.Text = tostring(math.floor(defaultColor.G * 255))
+		uiCorner(gSlider, 4)
+
+		local bSlider = Instance.new("TextBox", cFrame)
+		bSlider.Size = UDim2.new(0.12, 0, 0.5, 0)
+		bSlider.Position = UDim2.new(0.8, 0, 0.25, 0)
+		bSlider.BackgroundColor3 = Color3.fromRGB(40, 40, 100)
+		bSlider.TextColor3 = Color3.new(1,1,1)
+		bSlider.Text = tostring(math.floor(defaultColor.B * 255))
+		uiCorner(bSlider, 4)
+
+		-- New: Color Wheel Activation Button
+		local wheelBtn = Instance.new("TextButton", cFrame)
+		wheelBtn.Size = UDim2.new(0.06, 0, 0.5, 0)
+		wheelBtn.Position = UDim2.new(0.93, 0, 0.25, 0)
+		wheelBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+		wheelBtn.TextColor3 = Color3.new(1, 1, 1)
+		wheelBtn.Text = "🎨"
+		wheelBtn.TextSize = 14
+		uiCorner(wheelBtn, 4)
+
+		-- Find top level GUI structure to prevent clipping
+		local mainTargetGui = settingsCont:FindFirstAncestorOfClass("ScreenGui") or settingsCont
+
+		-- New: Color Wheel Popup Menu Canvas
+		local wheelPopup = Instance.new("Frame", mainTargetGui)
+		wheelPopup.Size = UDim2.new(0, 160, 0, 190)
+		wheelPopup.Position = UDim2.new(0.5, -80, 0.5, -95)
+		wheelPopup.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		wheelPopup.BorderSizePixel = 0
+		wheelPopup.Visible = false
+		wheelPopup.ZIndex = 10
+		uiCorner(wheelPopup, 6)
+
+		local popupStroke = Instance.new("UIStroke", wheelPopup)
+		popupStroke.Color = Color3.fromRGB(55, 55, 55)
+		popupStroke.Thickness = 1
+
+		local wheelTitle = Instance.new("TextLabel", wheelPopup)
+		wheelTitle.Size = UDim2.new(1, 0, 0, 25)
+		wheelTitle.BackgroundTransparency = 1
+		wheelTitle.Text = cName
+		wheelTitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+		wheelTitle.TextSize = 14
+		wheelTitle.FontFace = Font.fromName(textFont)
+		wheelTitle.ZIndex = 10
+
+		local closeWheel = Instance.new("TextButton", wheelPopup)
+		closeWheel.Size = UDim2.new(0, 20, 0, 20)
+		closeWheel.Position = UDim2.new(1, -25, 0, 2)
+		closeWheel.BackgroundTransparency = 1
+		closeWheel.Text = "✕"
+		closeWheel.TextColor3 = Color3.fromRGB(150, 150, 150)
+		closeWheel.TextSize = 14
+		closeWheel.ZIndex = 10
+
+		local wheelImage = Instance.new("ImageButton", wheelPopup)
+		wheelImage.Size = UDim2.new(0, 130, 0, 130)
+		wheelImage.Position = UDim2.new(0.5, -65, 0, 30)
+		wheelImage.BackgroundTransparency = 1
+		wheelImage.Image = "rbxassetid://2849458409" -- High quality default Roblox asset color wheel
+		wheelImage.ZIndex = 10
+
+		local wheelPin = Instance.new("Frame", wheelImage)
+		wheelPin.Size = UDim2.new(0, 6, 0, 6)
+		wheelPin.AnchorPoint = Vector2.new(0.5, 0.5)
+		wheelPin.BackgroundColor3 = Color3.new(1, 1, 1)
+		wheelPin.ZIndex = 11
+		uiCorner(wheelPin, 3)
+
+		local pinStroke = Instance.new("UIStroke", wheelPin)
+		pinStroke.Color = Color3.new(0, 0, 0)
+		pinStroke.Thickness = 1
+
+		if cCallback then cCallback(defaultColor) end
+
+		local function updateColor()
+			local r = math.clamp(tonumber(rSlider.Text) or 255, 0, 255)
+			local g = math.clamp(tonumber(gSlider.Text) or 255, 0, 255)
+			local b = math.clamp(tonumber(bSlider.Text) or 255, 0, 255)
+			rSlider.Text, gSlider.Text, bSlider.Text = tostring(r), tostring(g), tostring(b)
+
+			_G.SavedConfig[settingID] = {R = r, G = g, B = b}
+			saveConfigToPC()
+
+			if cCallback then cCallback(Color3.fromRGB(r, g, b)) end
+		end
+
+		-- Color Wheel Dragging Math Engine
+		local isDragging = false
+
+		local function updateFromWheel(input)
+			local rSize = wheelImage.AbsoluteSize
+			local rPos = wheelImage.AbsolutePosition
+			local mousePos = input.Position
+
+			local relativeX = mousePos.X - (rPos.X + rSize.X / 2)
+			local relativeY = mousePos.Y - (rPos.Y + rSize.Y / 2)
+
+			local angle = math.atan2(relativeY, relativeX)
+			local hue = (angle + math.pi) / (2 * math.pi)
+
+			local radius = rSize.X / 2
+			local distance = math.sqrt(relativeX^2 + relativeY^2)
+			local saturation = math.clamp(distance / radius, 0, 1)
+
+			if distance > radius then
+				relativeX = (relativeX / distance) * radius
+				relativeY = (relativeY / distance) * radius
+			end
+
+			wheelPin.Position = UDim2.new(0.5, relativeX, 0.5, relativeY)
+
+			local pickedColor = Color3.fromHSV(hue, saturation, 1)
+			rSlider.Text = tostring(math.floor(pickedColor.R * 255))
+			gSlider.Text = tostring(math.floor(pickedColor.G * 255))
+			bSlider.Text = tostring(math.floor(pickedColor.B * 255))
+
+			updateColor()
+		end
+
+		-- Synchronize picker pointer position matching current configurations
+		local function syncPinPosition()
+			local r = tonumber(rSlider.Text) or 255
+			local g = tonumber(gSlider.Text) or 255
+			local b = tonumber(bSlider.Text) or 255
+			local h, s, v = Color3.fromRGB(r, g, b):ToHSV()
+
+			local angle = (h * 2 * math.pi) - math.pi
+			local radius = (wheelImage.AbsoluteSize.X / 2) * s
+
+			wheelPin.Position = UDim2.new(0.5, math.cos(angle) * radius, 0.5, math.sin(angle) * radius)
+		end
+
+		-- Input Connections
+		wheelBtn.MouseButton1Click:Connect(function()
+			wheelPopup.Visible = not wheelPopup.Visible
+			if wheelPopup.Visible then
+				syncPinPosition()
+			end
+		end)
+
+		closeWheel.MouseButton1Click:Connect(function()
+			wheelPopup.Visible = false
+		end)
+
+		wheelImage.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				isDragging = true
+				updateFromWheel(input)
+			end
+		end)
+
+		UserInputService.InputChanged:Connect(function(input)
+			if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+				updateFromWheel(input)
+			end
+		end)
+
+		UserInputService.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				isDragging = false
+			end
+		end)
+
+		rSlider.FocusLost:Connect(updateColor)
+		gSlider.FocusLost:Connect(updateColor)
+		bSlider.FocusLost:Connect(updateColor)
+	end
 	end
 
 	FW.SettingsOverlay = {
@@ -1550,7 +2486,7 @@
 	Killaura:CreateToggle("Check If Sophia Frozen", true, nil)
 	Killaura:CreateToggle("Swing Animation", true, nil)
 
-	local KaidaKa = Combat:CreateButton("KaidaKa",nil, true)
+	KaidaKa = Combat:CreateButton("KaidaKa",nil, true)
 	KaidaKa:CreateToggle("Manual Swing", false, nil)
 	KaidaKa:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
 	KaidaKa:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
@@ -1565,7 +2501,7 @@
 
 
 
-	local AimAssist = Combat:CreateButton("Aim Assist",nil, true)
+	AimAssist = Combat:CreateButton("Aim Assist",nil, true)
 	AimAssist:CreateSlider("Range", 1, 150, 100, nil)
 	AimAssist:CreateSlider("Smoothness", 0, 100, 50, nil)
 	AimAssist:CreateSlider("Shake Intensity", 0, 2, 0, nil)
@@ -1578,7 +2514,7 @@
 	AimAssist:CreateToggle("Track Through Walls", true, nil)
 	AimAssist:CreateToggle("Face Target", false,nil)
 
-	local Velocity = Combat:CreateButton("Velocity", nil, true)
+	Velocity = Combat:CreateButton("Velocity", nil, true)
 	Velocity:CreateSlider("Horizontal", 0, 100, 100, nil)
 	Velocity:CreateSlider("Velocity", 0, 100, 100, nil)
 	Velocity:CreateSlider("Left Knockback", 0, 100, 100, nil)
@@ -1592,13 +2528,13 @@
 	Velocity:CreateSlider("Bridge Horizontal Knockback", 0, 100, 50, nil)
 	Velocity:CreateSlider("Bridge Vertical Knockback", 0, 100, 50, nil)
 
-	local AutoClicker = Combat:CreateButton("Auto Clicker", nil, true)
+	AutoClicker = Combat:CreateButton("Auto Clicker", nil, true)
 	AutoClicker:CreateSlider("CPS", 1,40,7, nil)
 	AutoClicker:CreateToggle("Block Placement", true, nil)
 	AutoClicker:CreateToggle("Sword Swings", true, nil)
 	AutoClicker:CreateToggle("Require Mouse Held", true, nil)
 
-	local Reach = Combat:CreateButton("Reach", nil, true)
+	Reach = Combat:CreateButton("Reach", nil, true)
 	Reach:CreateToggle("Sword", true, nil)
 	Reach:CreateToggle("Placing", true, nil)
 	Reach:CreateToggle("Mining", true, nil)
@@ -1607,7 +2543,7 @@
 	Reach:CreateSlider("Mining Reach", 1, 100, 14.8, nil, 0.25)
 	Reach:CreateSlider("Placing Reach", 1, 100, 14.8, nil, 0.25)
 
-	local AutoShoot = Combat:CreateButton("Auto Shoot", nil, true)
+	AutoShoot = Combat:CreateButton("Auto Shoot", nil, true)
 	AutoShoot:CreateSlider("Range", 1, 1000, 50)
 	AutoShoot:CreateToggle("Target Players", true, nil)
 	AutoShoot:CreateToggle("Target NPCs/Dummies", false, nil)
@@ -1619,22 +2555,22 @@
 	--AutoShoot:CreateSlider("Randomization", 1, 100, 50, nil)
 	AutoShoot:CreateDropdown("Projectiles", {"arrow", "snowball", "mage_spell_base"}, "arrow", nil, true)
 	AutoShoot:CreateSlider("Shoot duration", 0.01, 2, 0.4)
-	local AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
+	AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
 	AutoSprint:CreateToggle("Bypass all items")
 	AutoSprint:CreateToggle("Don't auto sprint on gloops")
 
-	local WhiteHits = Visuals:CreateButton("White Hits", nil, true)
+	WhiteHits = Visuals:CreateButton("White Hits", nil, true)
 
-	local ChestStealer = Utility:CreateButton("Chest Stealer", nil, true)
+	ChestStealer = Utility:CreateButton("Chest Stealer", nil, true)
 	ChestStealer:CreateSlider("Range", 1, 50, 25, nil)
 	ChestStealer:CreateToggle("Crates", true, nil)
 	ChestStealer:CreateToggle("Chests", true, nil)
 	ChestStealer:CreateToggle("Own Crate", true, nil)
 
-	local AutoArmorSwitch = Utility:CreateButton("Auto Armor Switch", nil, true)
+	AutoArmorSwitch = Utility:CreateButton("Auto Armor Switch", nil, true)
 	AutoArmorSwitch:CreateSlider("Range",1, 75, 30)
 
-	local fastDrop = Utility:CreateButton("Fast Drop", nil, true)
+	fastDrop = Utility:CreateButton("Fast Drop", nil, true)
 	fastDrop.Values["Drop Keybind"] = Enum.KeyCode.H
 	fastDrop:CreateKeybind("Drop Keybind", Enum.KeyCode.H, function(newKey)
 		fastDrop.Values["Drop Keybind"] = newKey
@@ -1642,11 +2578,11 @@
 	fastDrop:CreateSlider("Drop Rate", 0.000001, 1, 0.1, nil)
 	fastDrop:CreateSlider("Drop Amount", 1, 10, 1, nil, 1)
 
-	local AutoBalloon = Utility:CreateButton("Auto Balloon", nil, true)
+	AutoBalloon = Utility:CreateButton("Auto Balloon", nil, true)
 	AutoBalloon:CreateSlider("Void range", 1, 250, 100, nil)
 	AutoBalloon:CreateSlider("Amount of Balloons", 1, 3, 3, nil, 1)
 
-	local AutoPearl = Utility:CreateButton("Auto Pearl", nil, true)
+	AutoPearl = Utility:CreateButton("Auto Pearl", nil, true)
 	AutoPearl:CreateSlider("Void range", 1, 250, 100, nil)
 	AutoPearl:CreateSlider("Shoot Duration", 0, 1, 0.25, nil)
 
@@ -1655,9 +2591,9 @@
 	VoidDrop:CreateToggle("During Balloons")
 	VoidDrop:CreateToggle("During Whisper Fly")
 
-	local LeaveParty = GameTab:CreateButton("Leave Party", nil, true)
+	LeaveParty = GameTab:CreateButton("Leave Party", nil, true)
 
-	local BlockCPSBypass = GameTab:CreateButton("BlockCPS Bypass", nil, true)
+	BlockCPSBypass = GameTab:CreateButton("BlockCPS Bypass", nil, true)
 	BlockCPSBypass:CreateSlider("CPS", 1, 100, 20,function(value)
 		if loops["blockcps bypass"] then
 			--bedwars.Cps.BLOCK_PLACE_CPS = value
@@ -1667,17 +2603,21 @@
 	local AutoQueue = Utility:CreateButton("Auto Queue", nil, true)
 	AutoQueue:CreateSlider("Delay", 0.1, 5, 1, nil, 0.1)
 	local AutoEmote = Utility:CreateButton("Auto Emote", nil, true)
-	local Emote = GameTab:CreateButton("Emote", nil, true)
-	Emote:CreateDropdown("Emote Type")
-	local Gravity = GameTab:CreateButton("Gravity", nil, true)
+    AutoEmote:CreateDropdown("Emote Type", emotes, "nightmare_1")
+	AutoEmote:CreateToggle("Upon Kill", false, nil)
+	AutoEmote:CreateToggle("Upon Bed Break", false, nil)
+    AutoEmote:CreateToggle("Upon Win", false, nil)
+	Emote = GameTab:CreateButton("Emote", nil, true)
+	Emote:CreateDropdown("Emote Type", emotes)
+	Gravity = GameTab:CreateButton("Gravity", nil, true)
 	Gravity:CreateSlider("Amount", 0, 196.2, 100, function(value)
 		if loops["gravity"] then
 			workspace.Gravity = value
 		end
 	end)
-	local FakeStats = Visuals:CreateButton("Fake Stats", nil, true)
+	FakeStats = Visuals:CreateButton("Fake Stats", nil, true)
 
-	local InfJump = Movement:CreateButton("Infinite Jump", nil, false)
+	InfJump = Movement:CreateButton("Infinite Jump", nil, false)
 	InfJump:CreateToggle("Bypass Jump Limits", true, nil)
 	InfJump:CreateSlider("Jump Accel (per jump)", 0, 25, 5, nil, 0.5)
 	InfJump:CreateSlider("Jump Cooldown", 0, 1, 0.1, nil, 0.01)
@@ -1692,7 +2632,7 @@
 		end
 	end
 
-	local ClimbButton = Movement:CreateButton("Climber", nil, true)
+	ClimbButton = Movement:CreateButton("Climber", nil, true)
 	ClimbButton:CreateSlider("Climb Speed", 1, 100, 35, nil, 1)
 	ClimbButton:CreateToggle("Force Climb State", true, nil)
 
@@ -1700,32 +2640,68 @@
 		loops["climber"] = state
 	end
 
-	local PhaseButton = Movement:CreateButton("Phase", nil, false)
+	PhaseButton = Movement:CreateButton("Phase", nil, false)
 	PhaseButton:CreateDropdown("Phase Method", {"Noclip", "Forward Push"}, "Noclip", nil)
 	PhaseButton:CreateSlider("Push Depth", 0.1, 5, 1.5, nil, 0.1)
 	
-	local AutoToxic = Utility:CreateButton("Auto Toxic", nil, true)
-	local AutoBuy = Utility:CreateButton("Auto Buy", nil, true)
-	local FastBreak = GameTab:CreateButton("Fast Break", nil, true)
-	local Nuker = GameTab:CreateButton("Nuker", nil, true)
-	local AutoHonor = Utility:CreateButton("Auto Honor", nil, true)
-	local ESP = Visuals:CreateButton("ESP", nil, true)
-	local ShopTierBypass = Utility:CreateButton("Shop Tier Bypass", nil, true)
-	local TaxBypass = Utility:CreateButton("Tax Bypass", nil, true)
-	local AutoWhisper = Kits:CreateButton("Auto Whisper", nil, true)
-	local AutoWarden = Kits:CreateButton("Auto Warden", nil, true)
-	local AutoGrimRepear = Kits:CreateButton("Auto Grim Repear", nil, true)
-	local AutoNyx = Kits:CreateButton("Auto Nyx", nil, true)
-	local AutoFreiya = Kits:CreateButton("Auto Freiya", nil, true)
-	local AutoMiner = Kits:CreateButton("Auto Miner", nil, true)
-	local AutoStar = Kits:CreateButton("Auto Star", nil, true)
-	local AutoMetal = Kits:CreateButton("Auto Metal", nil, true)
+	AutoToxic = Utility:CreateButton("Auto Toxic", nil, true)
+	AutoToxic:CreateTextbox("Kill Message", "Featherware On Top, {username}!")
+	AutoToxic:CreateTextbox("Bed Message", "Imagine losing your bed, {display}!")
+	AutoToxic:CreateTextbox("Win Message", "Featherware wins again!")
+	AutoToxic:CreateToggle("Upon Kill", false)
+	AutoToxic:CreateToggle("Upon Bed Break", false)
+	AutoToxic:CreateToggle("Upon Win", false)
+	AutoBuy = Utility:CreateButton("Auto Buy", nil, true)
+	AutoBuy:CreateToggle("Auto Buy Wool", false)
+	AutoBuy:CreateToggle("Auto Upgrade Swords", false)
+	AutoBuy:CreateToggle("Auto Upgrade Armor", false)
+	AutoBuy:CreateToggle("Auto Team Upgrades", false)
+	 FastBreak = GameTab:CreateButton("Fast Break", nil, true)
+    FastBreak:CreateSlider("Break Speed", 0.01, 1, 0.3, nil, 0.01)
+	Nuker = GameTab:CreateButton("Nuker", nil, true)
+	AutoHonor = Utility:CreateButton("Auto Honor", nil, true)
+	ESP = Visuals:CreateButton("ESP", nil, true)
+	ESP:CreateToggle("3D Box", true, nil)
+    ESP:CreateToggle("2D Box", true, nil)
+	ESP:CreateToggle("Chams", true, nil)
+	ESP:CreateToggle("ESP On Own Player", true, nil)
+    ESP:CreateToggle("ESP On NPCs", true, nil)
+	ESP:CreateColorPicker("3D Box Color", Color3.new(0.333333, 0, 0.498039))
+	ESP:CreateColorPicker("2D Box Color", Color3.new(0.333333, 0, 0.498039))
+	ESP:CreateColorPicker("Chams Color", Color3.new(0.333333, 0, 0.498039))
+
+	Utility:CreateButton("Shop Tier Bypass", nil, true)
+	Utility:CreateButton("Tax Bypass", nil, true)
+	Kits:CreateButton("Auto Whisper", nil, true)
+	AutoWarden = Kits:CreateButton("Auto Warden", nil, true)
+	AutoWarden:CreateSlider("Range", 1, 50, 20, nil, 1)
+	AutoGrimRepear = Kits:CreateButton("Auto Grim Repear", nil, true)
+	AutoGrimRepear:CreateSlider("Range", 1, 1000, 500, nil, 1)
+	AutoGrimRepear:CreateToggle("Use Collect Animation", true, nil)
+	Kits:CreateButton("Auto Nyx", nil, true)
+	AutoHannah = Kits:CreateButton("Auto Hannah", nil, true)
+	AutoHannah:CreateSlider("Range", 1, 40, 25, nil, 1)
+	Kits:CreateButton("Auto Freiya", nil, true)
+	AutoMiner = Kits:CreateButton("Auto Miner", nil, true)
+	AutoMiner:CreateSlider("Range", 1, 20, 6, nil, 1)
+	AutoMiner:CreateSlider("Mine Duration", 0, 2.5, 2.5, nil, 0.01)
+	AutoMiner:CreateToggle("Use Mine Animation", true, nil)
+	AutoStar = Kits:CreateButton("Auto Star", nil, true)
+	AutoStar:CreateSlider("Range", 1, 20, 10, nil, 1)
+    AutoStar:CreateToggle("Use Collect Animation", true, nil)
+	AutoMetal = Kits:CreateButton("Auto Metal", nil, true)
+	AutoMetal:CreateSlider("Range", 1, 20, 10, nil, 1)
+	AutoMetal:CreateSlider("Proximity Hold Time", 0, 1, 1, nil, 0.05)
+	AutoMetal:CreateToggle("Use Collect Animation", true, nil)
+	AutoMetal:CreateToggle("Require Metal Detector Held", true, nil)
 	Kits:CreateButton("Auto Lassy", nil, true)
 	Kits:CreateButton("Auto Adetunde", nil, true)
 	Kits:CreateButton("Auto Styx", nil, true)
 	Kits:CreateButton("Auto Melody", nil, true)
 	Kits:CreateButton("Auto Fish", nil, true)
-	Kits:CreateButton("Auto Kaliyah", nil, true)
+	AutoKaliyah = Kits:CreateButton("Auto Kaliyah", nil, true)
+	AutoKaliyah:CreateSlider("Range", 1, 1000, 14.4, nil, 0.1)
+	AutoKaliyah:CreateToggle("Use Punch Animation", true, nil)
 	Kits:CreateButton("Auto Lani", nil, true)
 	Kits:CreateButton("Auto Caitlyn", nil, true)
     Kits:CreateButton("Auto Bounty Hunter", nil, true)
@@ -2709,7 +3685,7 @@
 			CFrame = tracer.CFrame + (tracer.CFrame.LookVector * distance)
 		})
 		tween:Play()
-		Debris:AddItem(tracer, travelTime)
+		game.Debris:AddItem(tracer, travelTime)
 	end
 
 
@@ -3767,6 +4743,92 @@
 	AutoQueue.Callbacks.OnToggle = function(state)
 		loops["auto queue"] = state
 	end
+	
+local function playEmote(emoteName)
+	if emoteName and emoteName ~= "" then
+
+		local character = Player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+
+		if not humanoid or humanoid.Health <= 0 then
+			warn("Cannot play emote: Player is dead or character missing")
+			return
+		end
+
+		local localAnimationId = EmoteAnimationData[emoteName]
+		if localAnimationId and animator then
+			pcall(function()
+				local animInstance = Instance.new("Animation")
+				animInstance.AnimationId = localAnimationId
+
+				local track = animator:LoadAnimation(animInstance)
+				track.Priority = Enum.AnimationPriority.Action 
+				track:Play()
+
+				local moveConnection
+				local jumpConnection
+
+				local function cleanUp()
+					if moveConnection then moveConnection:Disconnect(); moveConnection = nil end
+					if jumpConnection then jumpConnection:Disconnect(); jumpConnection = nil end
+				end
+
+				moveConnection = humanoid:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+					if humanoid.MoveDirection.Magnitude > 0 then
+						track:Stop(0.01) -- Smooth fade out
+						cleanUp()
+					end
+				end)
+
+				jumpConnection = humanoid:GetPropertyChangedSignal("Jump"):Connect(function()
+					if humanoid.Jump == true then
+						track:Stop(0.1)
+						cleanUp()
+					end
+				end)
+
+				track.Stopped:Connect(function()
+					cleanUp()
+				end)
+
+			end)
+		else
+		end
+
+		
+		Player:SetAttribute("EmoteTypeSlot1", emoteName)
+		print("Sending emote to server:", emoteName)
+
+		local args = {
+			{
+				emoteType = emoteName
+			}
+		}
+
+		local remoteManaged = game:GetService("ReplicatedStorage")
+			:WaitForChild("rbxts_include")
+			:WaitForChild("node_modules")
+			:WaitForChild("@rbxts")
+			:WaitForChild("net")
+			:WaitForChild("out")
+			:WaitForChild("_NetManaged")
+			:WaitForChild("Emote")
+
+		task.spawn(function()
+			local success, result = pcall(function()
+				return remoteManaged:InvokeServer(unpack(args))
+			end)
+			if not success then
+				warn("Remote invocation failed:", result)
+			else
+				print("Server responded with:", result)
+			end
+		end)
+	else
+		warn("Failed to play emote: Emote.Values['Emote Type'] is empty or nil!")
+	end
+end
 
 	matchEndEvent.OnClientEvent:Connect(function()
 		if loops["auto queue"] then
@@ -3780,6 +4842,18 @@
 
 				startQueue:FireServer(unpack(args))
 
+			end
+		end
+		
+		if loops["auto emote"] and AutoEmote.Values["Upon Win"] then
+			if Character and Character:FindFirstChild("Humanoid") then
+				local humanoid = Character:FindFirstChild("Humanoid")
+				
+				if humanoid and humanoid.Health > 0 then
+				   local emoteName = AutoEmote.Values["Emote Type"]
+				  
+				  playEmote(emoteName)
+				end
 			end
 		end
 	end)
@@ -3807,8 +4881,1190 @@
 			Player:SetAttribute("ChatNameColor", orginalChatNameColor)
 		end
 	end
+	
+local function playLocalAnimation(emoteName)
+	local character = game.Players.LocalPlayer.Character
+	if not character then return end
 
-	Emote.Callbacks.OnToggle = function(state)
-		loops["emote"] = state 
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if not animator then return end
 
+	local animationObject = Instance.new("Animation")
+
+	if emoteName == "NIGHTMARE_1" then
+		animationObject.AnimationId = "rbxassetid://152" 
+	else
+		animationObject.AnimationId = "rbxassetid://5077119569" 
 	end
+
+	if animationObject.AnimationId ~= "" then
+		local success, track = pcall(function()
+			return animator:LoadAnimation(animationObject)
+		end)
+
+		if success and track then
+			track.Priority = Enum.AnimationPriority.Action
+			track:Play()
+
+			return track, animationObject
+		end
+	end
+	animationObject:Destroy()
+	return nil
+end
+
+Emote.Callbacks.OnToggle = function(state)
+	loops["emote"] = state
+
+	if loops["emote"] then
+		local emoteName = Emote.Values["Emote Type"]
+		
+		playEmote(emoteName)
+
+		Emote.Toggled = false
+		Emote:SetState(false)
+	end
+end
+	
+local breakThread = nil 
+
+FastBreak.Callbacks.OnToggle = function(state)
+	loops["fast break"] = state 
+
+	if state then
+		if breakThread then task.cancel(breakThread) end
+
+		breakThread = task.spawn(function()
+			while loops["fast break"] do
+				task.wait(FastBreak.Values["Break Speed"])
+
+				local mouse = Player:GetMouse()
+				local char = Player.Character
+				local hum = char and char:FindFirstChild("Humanoid")
+
+				if char and hum and hum.Health > 0 and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+					local target = mouse.Target
+
+					if target and target:IsA("BasePart") and not target.Parent:FindFirstChild("Humanoid") then
+						local holdingMiningTool = false
+
+						if char:FindFirstChild("HandInvItem") and char.HandInvItem.Value then
+							local equippedItem = char.HandInvItem.Value.Name
+							local name = equippedItem:lower()
+
+							if name:find("pickaxe") or name:find("axe") or name:find("shears") then
+								holdingMiningTool = true
+							elseif table.find(swords, name) and loops["killaura"] == true and currentKaTarget and Killaura.Values["Require Sword Equipped"] == false then
+								holdingMiningTool = true
+							end
+						end 
+
+						if holdingMiningTool and DamageBlock then
+							pcall(function()
+								local gridX = math.round(target.Position.X / 3)
+								local gridY = math.round(target.Position.Y / 3)
+								local gridZ = math.round(target.Position.Z / 3)
+
+								local args = {
+									[1] = {
+										["blockRef"] = {
+											["blockPosition"] = Vector3.new(gridX, gridY, gridZ)
+										},
+										["hitPosition"] = mouse.Hit.Position,
+										["hitNormal"] = Vector3.new(0, 1, 0)
+									}
+								}
+
+								task.spawn(function()
+									pcall(function() DamageBlock:InvokeServer(unpack(args)) end)
+								end)
+							end)
+						end
+					end
+				end
+			end
+		end)
+	else
+		if breakThread then 
+			task.cancel(breakThread) 
+			breakThread = nil
+		end
+	end
+end
+
+local activeESP = {}
+local active2DFrames = {} -- Cache for our 2D Box frames
+local renderConnection = nil
+
+-- Setup a ScreenGui to hold the 2D boxes
+local espGui = Instance.new("ScreenGui")
+espGui.Name = "AdminESP_GUI"
+espGui.IgnoreGuiInset = true
+espGui.Parent = Player:WaitForChild("PlayerGui") -- Put in PlayerGui (or CoreGui if your admin panel has access)
+
+local function clearESP(model)
+	if activeESP[model] then
+		for _, instance in pairs(activeESP[model]) do
+			if instance then instance:Destroy() end
+		end
+		activeESP[model] = nil
+	end
+
+	if active2DFrames[model] then
+		active2DFrames[model]:Destroy()
+		active2DFrames[model] = nil
+	end
+end
+
+local function applyESP(model, isNPC)
+	local espOnOwn = ESP.Values["ESP On Own Player"]
+	local espOnNPCs = ESP.Values["ESP On NPCs"]
+	local isOwnPlayer = (model == Player.Character)
+
+	if isOwnPlayer and not espOnOwn then return end
+	if isNPC and not espOnNPCs then return end
+	if not isNPC and isOwnPlayer == false then return end
+
+	clearESP(model)
+	activeESP[model] = {}
+
+	-- 1. Chams
+	if ESP.Values["Chams"] then
+		local highlight = Instance.new("Highlight")
+		-- Added safety fallback color here:
+		highlight.FillColor = ESP.Values["Chams Color"] or Color3.new(0.333333, 0, 0.498039)
+		highlight.FillTransparency = 0.5 
+		highlight.OutlineColor = Color3.new(1, 1, 1)
+		highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		highlight.Parent = model
+		table.insert(activeESP[model], highlight)
+	end
+
+	-- 2. 3D Box
+	if ESP.Values["3D Box"] then
+		local box = Instance.new("SelectionBox")
+		box.LineThickness = 0.05
+
+		-- Added safety fallback color here:
+		local boxColor = ESP.Values["3D Box Color"] or Color3.new(0.333333, 0, 0.498039)
+		box.Color3 = boxColor
+		box.SurfaceColor3 = boxColor
+
+		box.Transparency = 0.7 
+		box.Adornee = model
+		box.Parent = model
+		table.insert(activeESP[model], box)
+	end
+
+	-- 3. 2D Box Setup
+	if ESP.Values["2D Box"] then
+		local frame = Instance.new("Frame")
+		frame.BackgroundTransparency = 1 
+		frame.Size = UDim2.new(0, 0, 0, 0)
+		frame.Visible = false
+		frame.Parent = espGui
+
+		local stroke = Instance.new("UIStroke")
+		-- Added safety fallback color here:
+		stroke.Color = ESP.Values["2D Box Color"] or Color3.new(0.333333, 0, 0.498039)
+		stroke.Thickness = 1.5
+		stroke.Parent = frame
+
+		active2DFrames[model] = frame
+	end
+end
+
+local function update2DBoxes()
+	for model, frame in pairs(active2DFrames) do
+		if model and model.PrimaryPart then
+			local cframe, size = model:GetBoundingBox()
+
+			local top = cframe.Position + Vector3.new(0, size.Y / 2, 0)
+			local bottom = cframe.Position - Vector3.new(0, size.Y / 2, 0)
+
+			local topScreen, topOnScreen = workspace.CurrentCamera:WorldToViewportPoint(top)
+			local bottomScreen, bottomOnScreen = workspace.CurrentCamera:WorldToViewportPoint(bottom)
+
+			if topOnScreen or bottomOnScreen then
+				local height = math.abs(bottomScreen.Y - topScreen.Y)
+				local width = height / 1.5 
+
+				frame.Size = UDim2.new(0, width, 0, height)
+				frame.Position = UDim2.new(0, topScreen.X - (width / 2), 0, topScreen.Y)
+				frame.Visible = true
+			else
+				frame.Visible = false
+			end
+		else
+			frame.Visible = false
+		end
+	end
+end
+
+local function refreshAllESP()
+	for _, player in pairs(Players:GetPlayers()) do
+		if player.Character and player.Character:FindFirstChild("Humanoid") and player.Character.PrimaryPart then
+			applyESP(player.Character, false)
+		end
+	end
+
+	for _, npc in pairs(workspace:GetChildren()) do
+		if npc and npc:IsA("Model") and npc:FindFirstChild("Humanoid") and npc.PrimaryPart then
+			if not Players:GetPlayerFromCharacter(npc) then
+				applyESP(npc, true)
+			end
+		end
+	end
+end
+
+local function cleanAllESP()
+	for model, _ in pairs(activeESP) do clearESP(model) end
+	for model, _ in pairs(active2DFrames) do clearESP(model) end
+	activeESP = {}
+	active2DFrames = {}
+end
+
+ESP.Callbacks.OnToggle = function(state)
+	loops["esp"] = state
+
+	if state then
+		refreshAllESP()
+
+		if not renderConnection and ESP.Values["2D Box"] then
+			renderConnection = RunService.RenderStepped:Connect(update2DBoxes)
+		end
+	else
+		cleanAllESP()
+
+		if renderConnection then
+			renderConnection:Disconnect()
+			renderConnection = nil
+		end
+	end
+end
+
+task.spawn(function()
+	while task.wait(1.5) do
+		if loops["esp"] then
+			refreshAllESP()
+		end
+	end
+end)
+
+AutoEmote.Callbacks.OnToggle = function(state)
+	loops["auto emote"] = state
+end
+
+DeathEvent.OnClientEvent:Connect(function(data)
+	if data and loops["auto emote"] and AutoEmote.Values["Upon Kill"] then
+
+		local killer = data.fromEntity
+		if not killer then return end
+
+		local killerName = tostring(killer)
+
+		if killerName == Player.Name or killerName == Player.DisplayName then
+			local emoteName = AutoEmote.Values["Emote Type"]
+
+			if emoteName then
+				playEmote(emoteName)
+			end
+		end
+	end
+end)
+
+BedBreakEvent.OnClientEvent:Connect(function(data)
+	if not data then return end
+
+	local breaker = tostring(data.player) or "Unknown"
+
+	if loops["auto emote"] and AutoEmote.Values["Upon Bed Break"] and (breaker == Player.Name or breaker == Player.DisplayName) then
+		local emoteName = AutoEmote.Values["Emote Type"]
+
+		if emoteName then
+			playEmote(emoteName)
+		end
+	end
+end)
+
+local function checkAndConsume(child)
+	if loops["auto grim repear"] then
+		if child:IsA("Model") and child.Name == "GrimReaperSoul" then
+
+			local Token = child:GetAttribute("GrimReaperSoulSecret")
+
+			if not Token then
+				local startTime = os.clock()
+				repeat
+					task.wait()
+					Token = child:GetAttribute("GrimReaperSoulSecret")
+				until Token or (os.clock() - startTime > 3) 
+			end
+
+			local range = AutoGrimRepear.Values["Range"] or 150
+
+			local Spirit = child:FindFirstChild("Spirit")
+
+			if not Spirit then return end
+			if not Character then return end
+
+			local rootPart = Character:FindFirstChild("HumanoidRootPart")
+			if not rootPart then return end -- Exit if it doesn't exist yet
+
+			local distance = (Spirit.Position - rootPart.Position).Magnitude
+
+			if distance <= range then
+				if Token then
+					local args = {
+						{
+							secret = Token
+						}
+					}
+
+					task.spawn(function()
+						local success, result = pcall(function()
+							return ConsumeSoulRemote:InvokeServer(unpack(args))
+						end)
+
+						if success then
+
+							if AutoGrimRepear.Values["Use Collect Animation"] then
+								local humanoid = Character:FindFirstChildOfClass("Humanoid")
+								if humanoid then
+									local anim = Instance.new("Animation")
+									anim.AnimationId = "rbxassetid://7228927934"
+
+									local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+									local track = animator:LoadAnimation(anim)
+
+									track.Looped = false
+									track:Play()
+
+									task.spawn(function()
+										track.Stopped:Wait()
+										anim:Destroy()
+									end)
+								end
+							end
+
+						else
+							warn("Failed to consume soul via remote:", result)
+						end
+					end)
+				else
+					warn("Could not find 'GrimReaperSoulSecret' attribute on the soul instance.")
+				end
+			end
+		end
+	end
+end
+
+workspace.ChildAdded:Connect(checkAndConsume)
+
+for _, existingChild in ipairs(workspace:GetChildren()) do
+	task.spawn(checkAndConsume, existingChild)
+end
+
+AutoGrimRepear.Callbacks.OnToggle = function(state)
+	loops["auto grim repear"] = state
+end
+
+AutoStar.Callbacks.OnToggle = function(state)
+	loops["auto star"] = state
+end
+
+local TARGET_STARS = {
+	["CritStar"] = true,
+	["VitalityStar"] = true
+}
+
+local function processStar(child)
+	if not loops["auto star"] then return end
+	if not TARGET_STARS[child.Name] then return end
+
+	local character = Player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then return end
+
+	local starRoot = child:FindFirstChild("RootPart")
+	if not starRoot then return end
+
+	local maxRange = (AutoStar.Values and AutoStar.Values["Range"]) or 50
+	local distance = (rootPart.Position - starRoot.Position).Magnitude
+
+	if distance <= maxRange then
+		local starId = child:GetAttribute("id") or child:GetAttribute("Id")
+		if starId then
+			local args = {
+				{
+					id = starId,
+					collectableName = child.Name
+				}
+			}
+
+			task.defer(CollectRemote.FireServer, CollectRemote, unpack(args))
+			if AutoStar.Values and AutoStar.Values["Use Collect Animation"] then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					local anim = Instance.new("Animation")
+					anim.AnimationId = "rbxassetid://4866397461"
+
+					local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+					local track = animator:LoadAnimation(anim)
+
+					track.Looped = false
+					track:Play()
+
+					task.spawn(function()
+						track.Stopped:Wait()
+						anim:Destroy()
+					end)
+				end
+			end
+		end
+	end
+end
+
+workspace.ChildAdded:Connect(processStar)
+
+task.spawn(function()
+	while task.wait(0.25) do
+		if not loops["auto star"] then continue end
+
+		local character = Player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then continue end
+
+		local maxRange = (AutoStar.Values and AutoStar.Values["Range"]) or 50
+
+		local overlapParams = OverlapParams.new()
+		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local nearbyParts = workspace:GetPartBoundsInRadius(rootPart.Position, maxRange, overlapParams)
+
+		for i = 1, #nearbyParts do
+			local part = nearbyParts[i]
+			if part.Name == "RootPart" and part.Parent and TARGET_STARS[part.Parent.Name] then
+				task.defer(processStar, part.Parent)
+			end
+		end
+	end
+end)
+
+AutoMetal.Callbacks.OnToggle = function(state)
+	loops["auto metal"] = state
+end
+
+local function isHoldingMetalDetector(character)
+	if character:FindFirstChild("metal_detector") then
+		return true
+	end
+
+	local handInvItem = character:FindFirstChild("HandInvItem")
+	if handInvItem and handInvItem:IsA("ValueObject") and handInvItem.Value then
+		if handInvItem.Value.Name == "metal_detector" or (handInvItem.Value:IsA("Instance") and handInvItem.Value.Name == "metal_detector") then
+			return true
+		end
+	end
+	return false
+end
+
+local function processMetal(model)
+	if not loops["auto metal"] then return end
+	if model.Name ~= "Model" or not model:FindFirstChild("hidden-metal-prompt") then return end
+
+	if activeProcesses[model] then return end
+
+	local character = Player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then return end
+
+	local requireHeld = AutoMetal.Values and AutoMetal.Values["Require Metal Detector Held"]
+	if requireHeld and not isHoldingMetalDetector(character) then return end
+
+	local metalPart = model:FindFirstChild("Part")
+	if not metalPart then return end
+
+	local maxRange = (AutoMetal.Values and AutoMetal.Values["Range"]) or 10
+	local distance = (rootPart.Position - metalPart.Position).Magnitude
+
+	if distance <= maxRange then
+		activeProcesses[model] = true
+
+		task.spawn(function()
+			local holdTime = (AutoMetal.Values and AutoMetal.Values["Proximity Hold Time"]) or 0
+			if holdTime > 0 then
+				task.wait(holdTime)
+			end
+
+			activeProcesses[model] = nil
+
+			if not loops["auto metal"] then return end
+			local currentCharacter = Player.Character
+			local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+			if not currentRoot or not model:IsDescendantOf(workspace) or not metalPart:IsDescendantOf(workspace) then return end
+
+			if requireHeld and not isHoldingMetalDetector(currentCharacter) then return end
+
+			local currentDistance = (currentRoot.Position - metalPart.Position).Magnitude
+			local currentMaxRange = (AutoMetal.Values and AutoMetal.Values["Range"]) or 10
+
+			if currentDistance <= currentMaxRange then
+				local metalId = model:GetAttribute("id") or model:GetAttribute("Id")
+				if metalId then
+					activeProcesses[model] = true 
+
+					local args = {
+						{
+							id = metalId
+						}
+					}
+
+					CollectRemote:FireServer(unpack(args))
+
+					if AutoMetal.Values and AutoMetal.Values["Use Collect Animation"] then
+						local humanoid = currentCharacter:FindFirstChildOfClass("Humanoid")
+						if humanoid then
+							local anim = Instance.new("Animation")
+							anim.AnimationId = "rbxassetid://9378575104"
+
+							local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+							local track = animator:LoadAnimation(anim)
+
+							track.Looped = false
+							track:Play()
+
+							task.spawn(function()
+								track.Stopped:Wait()
+								anim:Destroy()
+							end)
+						end
+					end
+				end
+			end
+		end)
+	end
+end
+
+workspace.ChildAdded:Connect(function(child)
+	if child:IsA("Model") then
+		processMetal(child)
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.5) do
+		if not loops["auto metal"] then continue end
+
+		local character = Player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then continue end
+
+		local requireHeld = AutoMetal.Values and AutoMetal.Values["Require Metal Detector Held"]
+		if requireHeld and not isHoldingMetalDetector(character) then continue end
+
+		local maxRange = (AutoMetal.Values and AutoMetal.Values["Range"]) or 10
+
+		local overlapParams = OverlapParams.new()
+		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local nearbyParts = workspace:GetPartBoundsInRadius(rootPart.Position, maxRange, overlapParams)
+
+		for i = 1, #nearbyParts do
+			local part = nearbyParts[i]
+			if part.Name == "Part" and part.Parent and part.Parent:IsA("Model") and part.Parent.Name == "Model" then
+				processMetal(part.Parent)
+			end
+		end
+	end
+end)
+
+
+AutoHannah.Callbacks.OnToggle = function(state)
+	loops["auto hannah"] = state
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		hannahTargetsProcessing[player.Character] = nil
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.1) do 
+		if not loops["auto hannah"] then continue end
+
+		local character = Player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then continue end
+
+		local maxRange = (AutoHannah.Values and AutoHannah.Values["Range"]) or 20
+
+		local allPlayers = Players:GetPlayers()
+		for i = 1, #allPlayers do
+			local targetPlayer = allPlayers[i]
+
+			if targetPlayer ~= Player then
+				local enemyChar = targetPlayer.Character
+
+				if enemyChar and not hannahTargetsProcessing[enemyChar] then
+					local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
+
+					local executionIcon = enemyChar:FindFirstChild("Hannah Execution Icon", true)
+
+					if enemyRoot and executionIcon then
+						local distance = (rootPart.Position - enemyRoot.Position).Magnitude
+
+						if distance <= maxRange then
+							hannahTargetsProcessing[enemyChar] = true
+
+							task.spawn(function()
+								local args = {
+									{
+										user = Player,
+										victimEntity = enemyChar
+									}
+								}
+
+								local success, result = pcall(function()
+									return HannahRemote:InvokeServer(unpack(args))
+								end)
+
+								if success then
+									print("executed " .. targetPlayer.Name)
+								else
+									hannahTargetsProcessing[enemyChar] = nil
+								end
+							end)
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+AutoWarden.Callbacks.OnToggle = function(state)
+	loops["auto warden"] = state
+end
+
+local function processJailorSoul(model)
+	if not loops["auto warden"] then return end
+	if model.Name ~= "JailorSoul" then return end
+
+	if activeWardenSouls[model] then return end
+
+	local character = Player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then return end
+
+	local spiritPart = model:FindFirstChild("Spirit")
+	if not spiritPart then return end
+
+	local maxRange = (AutoWarden.Values and AutoWarden.Values["Range"]) or 20
+	local distance = (rootPart.Position - spiritPart.Position).Magnitude
+
+	if distance <= maxRange then
+		local soulId = model:GetAttribute("id") or model:GetAttribute("Id")
+		if soulId then
+			activeWardenSouls[model] = true
+
+			local args = {
+				{
+					id = soulId,
+					collectableName = "JailorSoul"
+				}
+			}
+
+			task.defer(CollectRemote.FireServer, CollectRemote, unpack(args))
+
+		end
+	end
+end
+
+workspace.ChildAdded:Connect(function(child)
+	if child:IsA("Model") then
+		processJailorSoul(child)
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.1) do
+		if not loops["auto warden"] then continue end
+
+		local character = Player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then continue end
+
+		local maxRange = (AutoWarden.Values and AutoWarden.Values["Range"]) or 20
+
+		local overlapParams = OverlapParams.new()
+		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local nearbyParts = workspace:GetPartBoundsInRadius(rootPart.Position, maxRange, overlapParams)
+
+		for i = 1, #nearbyParts do
+			local part = nearbyParts[i]
+			if part.Name == "Spirit" and part.Parent and part.Parent.Name == "JailorSoul" then
+				task.defer(processJailorSoul, part.Parent)
+			end
+		end
+	end
+end)
+
+AutoMiner.Callbacks.OnToggle = function(state)
+	loops["auto miner"] = state
+end
+
+local miningSessions = {}
+
+local function processPetrifiedPlayer(model)
+	if not loops["auto miner"] then return end
+	if activePetrifiedPlayers[model] or miningSessions[model] then return end
+
+	local character = Player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not rootPart or not humanoid then return end
+
+	local targetRoot = model:FindFirstChild("HumanoidRootPart")
+	if not targetRoot then return end
+
+	local prompt = targetRoot:FindFirstChild("MinerInteraction")
+	if not prompt then return end
+
+	local maxRange = (AutoMiner.Values and AutoMiner.Values["Range"]) or 6
+	local distance = (rootPart.Position - targetRoot.Position).Magnitude
+
+	if distance <= maxRange then
+		local petrifyId = model:GetAttribute("petrifyId") 
+			or model:GetAttribute("PetrifyId") 
+			or prompt:GetAttribute("petrifyId")
+			or prompt:GetAttribute("PetrifyId")
+
+		if petrifyId then
+			miningSessions[model] = true
+
+			task.spawn(function()
+				local animationTrack = nil
+				local shouldUseAnim = AutoMiner.Values and AutoMiner.Values["Use Mine Animation"]
+				local mineDuration = (AutoMiner.Values and AutoMiner.Values["Mine Duration"]) or 2.5
+
+				-- 1. Optional Animation Setup
+				if shouldUseAnim then
+					local anim = Instance.new("Animation")
+					anim.AnimationId = "rbxassetid://8934264605"
+
+					local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+					animationTrack = animator:LoadAnimation(anim)
+					animationTrack.Looped = true
+					animationTrack:Play()
+				end
+
+				-- 2. Interruption Detection loop during the duration
+				local startTime = os.clock()
+				local interrupted = false
+
+				-- Track initial state to check if they move/jump
+				local initialPosition = rootPart.Position
+
+				while os.clock() - startTime < mineDuration do
+					task.wait()
+
+					-- Check if state changed or out of range
+					local currentDistance = (rootPart.Position - targetRoot.Position).Magnitude
+					local hasMoved = (rootPart.Position - initialPosition).Magnitude > 0.5
+					local isJumping = humanoid.FloorMaterial == Enum.Material.Air
+
+					if not loops["auto miner"] or currentDistance > maxRange or hasMoved or isJumping then
+						interrupted = true
+						break
+					end
+				end
+
+				-- 3. Clean up animation
+				if animationTrack then
+					animationTrack:Stop()
+					animationTrack:Destroy()
+				end
+
+				-- 4. Fire remote if NOT interrupted
+				if not interrupted then
+					activePetrifiedPlayers[model] = true
+					local args = {
+						{
+							petrifyId = petrifyId
+						}
+					}
+					DestroyPetrifiedRemote:FireServer(unpack(args))
+				end
+
+				miningSessions[model] = nil
+			end)
+		end
+	end
+end
+
+workspace.ChildAdded:Connect(function(child)
+	if child:IsA("Model") then
+		processPetrifiedPlayer(child)
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.02) do
+		if not loops["auto miner"] then continue end
+
+		local character = Player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then continue end
+
+		local maxRange = (AutoMiner.Values and AutoMiner.Values["Range"]) or 6
+
+		local overlapParams = OverlapParams.new()
+		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+
+		local nearbyParts = workspace:GetPartBoundsInRadius(rootPart.Position, maxRange, overlapParams)
+
+		for i = 1, #nearbyParts do
+			local part = nearbyParts[i]
+			if part.Name == "HumanoidRootPart" and part.Parent and part.Parent:IsA("Model") then
+				task.defer(processPetrifiedPlayer, part.Parent)
+			end
+		end
+	end
+end)
+
+AutoKaliyah.Callbacks.OnToggle = function(state)
+	loops["auto kaliyah"] = state
+end
+
+Players.PlayerRemoving:Connect(function(player)
+	if player.Character then
+		kaliyahTargetsProcessing[player.Character] = nil
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.01) do 
+		if not loops["auto kaliyah"] then continue end
+
+		local character = Player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if not rootPart then continue end
+
+		local maxRange = (AutoKaliyah.Values and AutoKaliyah.Values["Range"]) or 14.4
+
+		local allPlayers = Players:GetPlayers()
+		for i = 1, #allPlayers do
+			local targetPlayer = allPlayers[i]
+
+			if targetPlayer ~= Player then
+				local enemyChar = targetPlayer.Character
+
+				if enemyChar and not kaliyahTargetsProcessing[enemyChar] then
+					local enemyRoot = enemyChar:FindFirstChild("HumanoidRootPart")
+
+					local punchPrompt = enemyChar:FindFirstChild("KaliyahPunchInteraction", true)
+
+					if enemyRoot and punchPrompt then
+						local distance = (rootPart.Position - enemyRoot.Position).Magnitude
+
+						if distance <= maxRange then
+							kaliyahTargetsProcessing[enemyChar] = true
+
+							local args = {
+								{
+									target = enemyChar
+								}
+							}
+
+							PunchRemote:FireServer(unpack(args))
+
+							if AutoKaliyah.Values and AutoKaliyah.Values["Use Punch Animation"] then
+								local humanoid = character:FindFirstChildOfClass("Humanoid")
+								if humanoid then
+									local anim = Instance.new("Animation")
+									anim.AnimationId = "rbxassetid://10968521285"
+
+									local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+									local track = animator:LoadAnimation(anim)
+
+									track.Looped = false
+									track:Play()
+
+									task.spawn(function()
+										track.Stopped:Wait()
+										anim:Destroy()
+									end)
+								end
+							end
+
+						end
+					end
+				end
+			end
+		end
+	end
+end)
+
+AutoToxic.Callbacks.OnToggle = function(state)
+	loops["auto toxic"] = state
+end
+
+local function processChatQueue()
+	if queueActive then return end
+	queueActive = true
+
+	task.spawn(function()
+		-- Safe evaluation using standard loops to prevent memory locks
+		while #chatQueue > 0 do
+			local messageToSend = table.remove(chatQueue, 1)
+
+			if messageToSend and messageToSend ~= "" then
+				local TextChatService = game:GetService("TextChatService")
+				if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+					local rbxGeneral = TextChatService:FindFirstChild("TextChannels") and TextChatService.TextChannels:FindFirstChild("RBXGeneral")
+					if rbxGeneral then
+						rbxGeneral:SendAsync(messageToSend)
+					end
+				else
+					-- FIXED: Re-written cleanly to remove hidden invalid formatting characters
+					local chatEvents = game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents")
+					local sayMessageRequest = chatEvents and chatEvents:FindFirstChild("SayMessageRequest")
+					if sayMessageRequest then
+						sayMessageRequest:FireServer(messageToSend, "All")
+					end
+				end
+			end
+
+			task.wait(2.5)
+		end
+		queueActive = false
+	end)
+end
+
+local function queueLocalChat(rawMessage, victimPlayer, fallbackString)
+	if not rawMessage or rawMessage == "" then return end
+
+	local uName = victimPlayer and victimPlayer.Name or (fallbackString or "everyone")
+	local dName = victimPlayer and victimPlayer.DisplayName or (fallbackString or "everyone")
+
+	local formatted = rawMessage
+	formatted = string.gsub(formatted, "{username}", uName)
+	formatted = string.gsub(formatted, "{user}", uName)
+	formatted = string.gsub(formatted, "{displayname}", dName)
+	formatted = string.gsub(formatted, "{display}", dName)
+
+	table.insert(chatQueue, formatted)
+	processChatQueue()
+end
+
+-- =======================================================
+-- CONNECTIONS
+-- =======================================================
+
+matchEndEvent.OnClientEvent:Connect(function()
+	if loops["auto queue"] then
+		if workspace:GetAttribute("QueueType") then
+			task.wait(AutoQueue.Values["Delay"] or 0.1)
+			local args = {
+				{
+					queueType = workspace:GetAttribute("QueueType")
+				}
+			}
+			startQueue:FireServer(unpack(args))
+		end
+	end
+
+	if loops["auto toxic"] and AutoToxic.Values["Upon Win"] then
+		local msg = AutoToxic.Values["Win Message"] or "Featherware wins again!"
+		queueLocalChat(msg, nil, "losers")
+	end
+end)
+
+DeathEvent.OnClientEvent:Connect(function(data)
+	if not data then return end
+
+	local killer = data.fromEntity
+	if not killer then return end
+	local killerName = tostring(killer)
+
+	if killerName == Player.Name or killerName == Player.DisplayName then
+		if loops["auto toxic"] and AutoToxic.Values["Upon Kill"] then
+			local victimEntity = data.entityInstance
+			local victimPlayer = victimEntity and game:GetService("Players"):GetPlayerFromCharacter(victimEntity)
+
+			local msg = AutoToxic.Values["Kill Message"] or "Featherware On Top, {username}!"
+			queueLocalChat(msg, victimPlayer, victimEntity and victimEntity.Name or "him")
+		end
+	end
+end)
+
+BedBreakEvent.OnClientEvent:Connect(function(data)
+	if not data then return end
+
+	local breakerData = data.player or data.breaker
+	local isMe = false
+
+	if breakerData then
+		if typeof(breakerData) == "Instance" and breakerData:IsA("Player") then
+			isMe = (breakerData == Player)
+		else
+			local breakerName = tostring(breakerData)
+			isMe = (breakerName == Player.Name or breakerName == Player.DisplayName)
+		end
+	end
+
+	if isMe then
+		if loops["auto toxic"] and AutoToxic.Values["Upon Bed Break"] then
+			local victimPlayer = nil
+			local fallbackName = "nice bed"
+
+			if data.team then
+				local teamStr = string.lower(tostring(data.team))
+				fallbackName = tostring(data.team) .. " Team"
+
+				local matchingOpponents = {}
+				local allPlayers = game:GetService("Players"):GetPlayers()
+
+				for i = 1, #allPlayers do
+					local targetP = allPlayers[i]
+					if targetP ~= Player and targetP.Team then
+						local playerTeamStr = string.lower(tostring(targetP.Team))
+						if playerTeamStr == teamStr or string.lower(targetP.Team.Name) == teamStr then
+							table.insert(matchingOpponents, targetP)
+						end
+					end
+				end
+
+				if #matchingOpponents > 0 then
+					victimPlayer = matchingOpponents[math.random(1, #matchingOpponents)]
+				end
+			end
+
+			local msg = AutoToxic.Values["Bed Message"] or "Imagine losing your bed, {display}!"
+			queueLocalChat(msg, victimPlayer, fallbackName)
+		end
+	end
+end)
+
+local function getCurrencyAmount(currencyName)
+	local inv = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):FindFirstChild(Player.Name)
+	if not inv then return 0 end
+
+	local currencyItem = inv:FindFirstChild(currencyName)
+	if currencyItem then
+		return currencyItem:GetAttribute("Amount") or 0
+	end
+	return 0
+end
+
+local swordProgression = {
+	{ item = "stone_sword", price = 20, currency = "iron", next = "iron_sword", prev = nil },
+	{ item = "iron_sword", price = 70, currency = "iron", next = "diamond_sword", prev = "stone_sword" },
+	{ item = "diamond_sword", price = 4, currency = "emerald", next = "emerald_sword", prev = "iron_sword" },
+	{ item = "emerald_sword", price = 20, currency = "emerald", next = nil, prev = "diamond_sword" }
+}
+
+local armorProgression = {
+	{ item = "leather_chestplate", price = 50, currency = "iron", slots = {"leather_helmet", "leather_chestplate", "leather_boots"} },
+	{ item = "iron_chestplate", price = 120, currency = "iron", slots = {"iron_helmet", "iron_chestplate", "iron_boots"} },
+	{ item = "diamond_chestplate", price = 6, currency = "emerald", slots = {"diamond_helmet", "diamond_chestplate", "diamond_boots"} },
+	{ item = "emerald_chestplate", price = 40, currency = "emerald", slots = {"emerald_helmet", "emerald_chestplate", "emerald_boots"} }
+}
+
+task.spawn(function()
+	while task.wait(1) do
+		if not loops["auto buy"] then continue end
+
+		local playerInv = game:GetService("ReplicatedStorage"):WaitForChild("Inventories"):FindFirstChild(Player.Name)
+		if not playerInv then continue end
+
+		if AutoBuy.Values["Auto Buy Wool"] and getCurrencyAmount("iron") >= 8 then
+			pcall(function()
+				PurchaseItem:InvokeServer({
+					shopItem = {
+						currency = "iron", itemType = "wool_white", amount = 16, price = 8,
+						disabledInQueue = {"mine_wars"}, category = "Blocks"
+					},
+					shopId = "1_item_shop"
+				})
+			end)
+		end
+
+		if AutoBuy.Values["Auto Upgrade Swords"] then
+			for _, tier in ipairs(swordProgression) do
+				local currentCurrency = tier.currency
+
+				local canBuy = false
+				if not playerInv:FindFirstChild(tier.item) then
+					if tier.prev == nil or playerInv:FindFirstChild(tier.prev) then
+						canBuy = true
+					end
+				end
+
+				if canBuy and getCurrencyAmount(currentCurrency) >= tier.price then
+					pcall(function()
+						PurchaseItem:InvokeServer({
+							shopItem = {
+								lockAfterPurchase = true, itemType = tier.item, price = tier.price,
+								requireInInventoryToTierUp = true, nextTier = tier.next, currency = currentCurrency,
+								amount = 1, category = "Combat", superiorItems = tier.next and {tier.next} or nil, 
+								disabledInQueue = {"tnt_wars"}, spawnWithItems = {tier.item}, 
+								ignoredByKit = {"barbarian", "dasher", "tinker"}
+							},
+							shopId = "1_item_shop"
+						})
+
+						local swordTool = playerInv:WaitForChild(tier.item, 1.5)
+						if swordTool then
+							SetInvItem:InvokeServer({ hand = swordTool })
+						end
+					end)
+					break 
+				end
+			end
+		end
+
+		if AutoBuy.Values["Auto Upgrade Armor"] then
+			for _, tier in ipairs(armorProgression) do
+				local currentCurrency = tier.currency
+
+				if not playerInv:FindFirstChild(tier.item) then
+					if getCurrencyAmount(currentCurrency) >= tier.price then
+						pcall(function()
+							PurchaseItem:InvokeServer({
+								shopItem = {
+									lockAfterPurchase = true, itemType = tier.item, price = tier.price,
+									currency = currentCurrency, amount = 1, category = "Combat",
+									ignoredByKit = {"tinker", "void_knight"}, spawnWithItems = tier.slots
+								},
+								shopId = "1_item_shop"
+							})
+
+							for slotIndex, pieceName in ipairs(tier.slots) do
+								local pieceObj = playerInv:WaitForChild(pieceName, 1.5)
+								if pieceObj then
+									SetArmorInvItem:InvokeServer({ item = pieceObj, armorSlot = slotIndex - 1 })
+								end
+							end
+						end)
+						break
+					end
+				end
+			end
+		end
+
+		if AutoBuy.Values["Auto Team Upgrades"] then
+			local diamonds = getCurrencyAmount("diamond")
+			if diamonds >= 4 then
+				pcall(function() TeamUpgrade:InvokeServer("ARMOR") end)
+			end
+			if diamonds >= 5 then
+				pcall(function() TeamUpgrade:InvokeServer("DAMAGE") end)
+			end
+		end
+	end
+end)
