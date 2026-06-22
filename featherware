@@ -764,25 +764,6 @@ local emotes = {
 	"zombie_melody",
 }
 
-local WhisperConfig = {
-	Enabled = false,
-	TargetPlayerName = nil,
-	AutoHeal = false,
-	HealThreshold = 80,
-	AutoFly = false,
-	FlyThreshold = -50 
-}
-
-local activeOwl = nil
-local lastHealTime = 0
-local HEAL_COOLDOWN = 8
-
-local eventsCore = game:GetService("ReplicatedStorage"):WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events")
-local netNode = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
-
-local useAbility = eventsCore:WaitForChild("useAbility")
-local summonOwl = netNode:WaitForChild("SummonOwl")
-local owlAction = netNode:WaitForChild("OwlActionAbilities")
 
 
 local startEmote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Emote")
@@ -1079,6 +1060,7 @@ end
 	local setArmorRemote = NetRemotes:WaitForChild("SetArmorInvItem")
 	local itemsFolder = ReplicatedStorage:WaitForChild("Items")
 
+	local emoteOptions = {}
 	local seen = {}
 
 	--[[for key, value in pairs(emoteTypes) do
@@ -1095,6 +1077,10 @@ end
 	local setInvItem = NetRemotes:WaitForChild("SetInvItem")
 	local playerInventory = inventoriesFolder:WaitForChild(game.Players.LocalPlayer.Name)
 
+	local t_find = table.find
+	local t_clear = table.clear
+	local m_deg = math.deg
+	local m_acos = math.acos
 
 	local Players = game:GetService("Players")
 	local Player = Players.LocalPlayer
@@ -1103,6 +1089,7 @@ end
 	local UserInputService = game:GetService("UserInputService")
 	local RunService = game:GetService("RunService")
 	local TweenService = game:GetService("TweenService")
+	local camera = workspace.CurrentCamera
 	local orginalClan = nil
 	local orginalLevel = nil
 	local orginalChatNameColor = nil
@@ -2760,28 +2747,22 @@ end
     AutoWhisper:CreateToggle("Auto Whisper Player", function(state)
     WhisperConfig.Enabled = state
     if not state and activeOwl then
-	useAbility:FireServer("DEACTIVE_OWL")
 	end
    end)
 
     AutoWhisper:CreateDropdown("Player", {"Player1", "Player2"}, nil, function(selected)
-     WhisperConfig.TargetPlayerName = selected
     end, false, true)
 
 AutoWhisper:CreateToggle("Auto Heal", function(state)
-	WhisperConfig.AutoHeal = state
 end)
 
 AutoWhisper:CreateSlider("Heal when below", 1, 100, 80, function(value)
- 	WhisperConfig.HealThreshold = value
 end, 1)
 
  AutoWhisper:CreateToggle("Auto Fly", function(state)
- 	WhisperConfig.AutoFly = state
 end)
 
  AutoWhisper:CreateSlider("Fly when below", -200, 0, -50, function(value)
- 	WhisperConfig.FlyThreshold = value
  end, 1)
  
  
@@ -2975,7 +2956,7 @@ end)
 
 		local dot = forward:Dot(toTarget)
 
-		local angle = math.deg((math.acos()(math.clamp(dot, -1, 1))))
+		local angle = m_deg((m_acos(math.clamp(dot, -1, 1))))
 
 		return angle <= maxAngle
 	end
@@ -6592,77 +6573,3 @@ AutoLani.Callbacks.OnToggle = function(state)
 		end
 	end)
 end
-
-workspace.ChildAdded:Connect(function(child)
-	if child.Name == "ServerOwl" then
-		task.delay(0.1, function()
-			local ownerId = child:GetAttribute("Owner")
-			if ownerId == Player.UserId then
-				activeOwl = child
-			end
-		end)
-	end
-end)
-
-workspace.ChildRemoved:Connect(function(child)
-	if child == activeOwl then
-		activeOwl = nil
-	end
-end)
-
-task.spawn(function()
-	while task.wait(0.1) do
-		if not WhisperConfig.Enabled then continue end
-
-		local targetName = WhisperConfig.TargetPlayerName
-		if not targetName or targetName == "" then continue end
-
-		local targetPlayer = Players:FindFirstChild(targetName)
-		if not targetPlayer then continue end
-
-		if not activeOwl then
-			useAbility:FireServer("SUMMON_OWL")
-			summonOwl:InvokeServer({targetPlayer})
-			task.wait(1.5) 
-			continue
-		end
-
-		local currentTargetId = activeOwl:GetAttribute("Target")
-		if currentTargetId ~= targetPlayer.UserId then
-			useAbility:FireServer("DEACTIVE_OWL")
-			task.wait(1)
-			continue
-		end
-
-		local character = targetPlayer.Character
-		if not character then continue end
-
-		local humanoid = character:FindFirstChild("Humanoid")
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
-
-		if not humanoid or not rootPart or humanoid.Health <= 0 then continue end
-
-		if WhisperConfig.AutoHeal then
-			if humanoid.Health <= WhisperConfig.HealThreshold then
-				if tick() - lastHealTime >= HEAL_COOLDOWN then
-					lastHealTime = tick()
-
-					owlAction:FireServer({
-						target = targetPlayer,
-						ability = "OWL_HEAL"
-					})
-				end
-			end
-		end
-
-		if WhisperConfig.AutoFly then
-			if rootPart.Position.Y <= WhisperConfig.FlyThreshold then
-				owlAction:FireServer({
-					target = targetPlayer,
-					ability = "OWL_LIFT"
-				})
-				task.wait(1) 
-			end
-		end
-	end
-end)
