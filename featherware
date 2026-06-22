@@ -763,6 +763,28 @@ local emotes = {
 	"zombie_jade",
 	"zombie_melody",
 }
+
+local WhisperConfig = {
+	Enabled = false,
+	TargetPlayerName = nil,
+	AutoHeal = false,
+	HealThreshold = 80,
+	AutoFly = false,
+	FlyThreshold = -50 
+}
+
+local activeOwl = nil
+local lastHealTime = 0
+local HEAL_COOLDOWN = 8
+
+local eventsCore = game:GetService("ReplicatedStorage"):WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events")
+local netNode = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged")
+
+local useAbility = eventsCore:WaitForChild("useAbility")
+local summonOwl = netNode:WaitForChild("SummonOwl")
+local owlAction = netNode:WaitForChild("OwlActionAbilities")
+
+
 local startEmote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("Emote")
 local DamageBlock = game:GetService("ReplicatedStorage"):FindFirstChild("rbxts_include")
 local NetRemotes = game.ReplicatedStorage.rbxts_include.node_modules["@rbxts"].net.out._NetManaged
@@ -855,7 +877,9 @@ end
 		["auto kaliyah"] = false,
 		["auto toxic"] = false,
 		["auto fish"] = false,
-		["zoom unlocker"] = false
+		["zoom unlocker"] = false,
+		["auto lani"] = false,
+		["auto whisper"] = false
 	}
 
 	local dropRemote = game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("DropItem")
@@ -1055,7 +1079,6 @@ end
 	local setArmorRemote = NetRemotes:WaitForChild("SetArmorInvItem")
 	local itemsFolder = ReplicatedStorage:WaitForChild("Items")
 
-	local emoteOptions = {}
 	local seen = {}
 
 	--[[for key, value in pairs(emoteTypes) do
@@ -1072,10 +1095,6 @@ end
 	local setInvItem = NetRemotes:WaitForChild("SetInvItem")
 	local playerInventory = inventoriesFolder:WaitForChild(game.Players.LocalPlayer.Name)
 
-	local t_find = table.find
-	local t_clear = table.clear
-	local m_deg = math.deg
-	local m_acos = math.acos
 
 	local Players = game:GetService("Players")
 	local Player = Players.LocalPlayer
@@ -1084,7 +1103,6 @@ end
 	local UserInputService = game:GetService("UserInputService")
 	local RunService = game:GetService("RunService")
 	local TweenService = game:GetService("TweenService")
-	local camera = workspace.CurrentCamera
 	local orginalClan = nil
 	local orginalLevel = nil
 	local orginalChatNameColor = nil
@@ -2512,18 +2530,18 @@ end
 		NotificationSystem.Settings.Enabled = val
 	end)
 
-	local Combat = FW:CreateCategory("Combat")
-	local Visuals = FW:CreateCategory("Visuals")
-	local Utility = FW:CreateCategory("Utility")
-	local Movement = FW:CreateCategory("Movement")
-	local GameTab = FW:CreateCategory("Game")
-    local Kits = FW:CreateCategory("Kits")
+	Combat = FW:CreateCategory("Combat")
+	Visuals = FW:CreateCategory("Visuals")
+	Utility = FW:CreateCategory("Utility")
+	Movement = FW:CreateCategory("Movement")
+	GameTab = FW:CreateCategory("Game")
+    Kits = FW:CreateCategory("Kits")
 
-	local Killaura = Combat:CreateButton("Killaura",nil, true)
+	Killaura = Combat:CreateButton("Killaura",nil, true)
 	Killaura:CreateToggle("Manual Swing", false, nil)
 	Killaura:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
-	local hitRegSlider = Killaura:CreateSlider("Hits per 10s", 1, 36, 34, nil, 0.5)
-	local hitDelaySlider = Killaura:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
+	hitRegSlider = Killaura:CreateSlider("Hits per 10s", 1, 36, 34, nil, 0.5)
+	hitDelaySlider = Killaura:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
 
 	hitRegSlider:SetVisible(false)
 
@@ -2738,7 +2756,35 @@ end
 
 	Utility:CreateButton("Shop Tier Bypass", nil, true)
 	Utility:CreateButton("Tax Bypass", nil, true)
-	Kits:CreateButton("Auto Whisper", nil, true)
+	AutoWhisper = Kits:CreateButton("Auto Whisper", nil, true)
+    AutoWhisper:CreateToggle("Auto Whisper Player", function(state)
+    WhisperConfig.Enabled = state
+    if not state and activeOwl then
+	useAbility:FireServer("DEACTIVE_OWL")
+	end
+   end)
+
+    AutoWhisper:CreateDropdown("Player", {"Player1", "Player2"}, nil, function(selected)
+     WhisperConfig.TargetPlayerName = selected
+    end, false, true)
+
+AutoWhisper:CreateToggle("Auto Heal", function(state)
+	WhisperConfig.AutoHeal = state
+end)
+
+AutoWhisper:CreateSlider("Heal when below", 1, 100, 80, function(value)
+ 	WhisperConfig.HealThreshold = value
+end, 1)
+
+ AutoWhisper:CreateToggle("Auto Fly", function(state)
+ 	WhisperConfig.AutoFly = state
+end)
+
+ AutoWhisper:CreateSlider("Fly when below", -200, 0, -50, function(value)
+ 	WhisperConfig.FlyThreshold = value
+ end, 1)
+ 
+ 
 	AutoWarden = Kits:CreateButton("Auto Warden", nil, true)
 	AutoWarden:CreateSlider("Range", 1, 50, 20, nil, 1)
 	AutoGrimRepear = Kits:CreateButton("Auto Grim Repear", nil, true)
@@ -2767,10 +2813,15 @@ end
 	AutoMelody:CreateSlider("Range", 1, 48, 36, nil, 0.5)
 	AutoMelody:CreateDropdown("Player To Heal", {}, nil, nil, false, true)
 	AutoFish = Kits:CreateButton("Auto Fish", nil, true)
+	AutoFish:CreateSlider("Minigame Wait Time", 0, 5, 1.5, nil, 0.1)
+	AutoFish:CreateToggle("Play Casting Anims", true, nil)
+	AutoFish:CreateToggle("Visual UI Auto-Track", true, nil)
 	AutoKaliyah = Kits:CreateButton("Auto Kaliyah", nil, true)
 	AutoKaliyah:CreateSlider("Range", 1, 1000, 14.4, nil, 0.1)
 	AutoKaliyah:CreateToggle("Use Punch Animation", true, nil)
-	Kits:CreateButton("Auto Lani", nil, true)
+	AutoLani = Kits:CreateButton("Auto Lani", nil, true)
+	AutoLani:CreateDropdown("Player To TP", {}, nil, nil, false, true)
+	AutoLani:CreateSlider("TP Time", 0, 4, 0.75, nil, 0.05)
 	Kits:CreateButton("Auto Caitlyn", nil, true)
 	Kits:CreateButton("Auto Bounty Hunter", nil, true)
 	
@@ -2781,7 +2832,7 @@ end
 		end
 	end)
 
-	PhaseButton.Callbacks.OnToggle = function(state)
+	PhaseButton.Callbacks.OnToggle = function(state)	
 		loops["phase"] = state
 	end
 
@@ -2924,7 +2975,7 @@ end
 
 		local dot = forward:Dot(toTarget)
 
-		local angle = m_deg((m_acos(math.clamp(dot, -1, 1))))
+		local angle = math.deg((math.acos()(math.clamp(dot, -1, 1))))
 
 		return angle <= maxAngle
 	end
@@ -5263,6 +5314,11 @@ BedBreakEvent.OnClientEvent:Connect(function(data)
 	end
 end)
 
+AutoGrimRepear.Callbacks.OnToggle = function(state)
+	loops["auto grim repear"] = state
+end
+
+
 local function checkAndConsume(child)
 	if loops["auto grim repear"] then
 		if child:IsA("Model") and child.Name == "GrimReaperSoul" then
@@ -5339,10 +5395,6 @@ workspace.ChildAdded:Connect(checkAndConsume)
 
 for _, existingChild in ipairs(workspace:GetChildren()) do
 	task.spawn(checkAndConsume, existingChild)
-end
-
-AutoGrimRepear.Callbacks.OnToggle = function(state)
-	loops["auto grim repear"] = state
 end
 
 AutoStar.Callbacks.OnToggle = function(state)
@@ -6211,3 +6263,406 @@ AutoMelody.Callbacks.OnToggle = function(state)
 		end)
 	end
 end
+
+AutoFish.Callbacks.OnToggle = function(state)
+	loops["auto fish"] = state
+end
+local netFolder = ReplicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out")
+local ProjectileRemote = netFolder:FindFirstChild("_NetManaged") and netFolder._NetManaged:WaitForChild("ProjectileFire", 3) 
+	or netFolder:FindFirstChild("_NetRemotes") and netFolder._NetRemotes:WaitForChild("ProjectileFire", 3)
+local PullRemote = netFolder:FindFirstChild("_NetManaged") and netFolder._NetManaged:WaitForChild("PullFishingRod", 3)
+	or netFolder:FindFirstChild("_NetRemotes") and netFolder._NetRemotes:WaitForChild("PullFishingRod", 3)
+
+local vec = (vector and vector.create) and vector.create or Vector3.new
+
+local function generateRandomString(length)
+	local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	local result = ""
+	for i = 1, length do
+		local rand = math.random(1, #chars)
+		result = result .. string.sub(chars, rand, rand)
+	end
+	return result
+end
+
+-- Confirm void/ledge is within 3-4 blocks out front
+local function checkVoidAhead(rootPart)
+	local launchDirection = rootPart.CFrame.LookVector.Unit
+	local rayOrigin = rootPart.Position + (launchDirection * 3.5)
+	local rayDirection = Vector3.new(0, -15, 0)
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {rootPart.Parent}
+
+	local result = workspace:Raycast(rayOrigin, rayDirection, params)
+	return result == nil
+end
+
+task.spawn(function()
+	local isFishing = false
+	local idleLoopTrack = nil
+
+	while task.wait(0.1) do
+		if not loops["auto fish"] then 
+			isFishing = false
+			if idleLoopTrack then idleLoopTrack:Stop() idleLoopTrack = nil end
+			continue 
+		end
+
+		local Character = Player.Character
+		if not Character then continue end
+
+		local rootPart = Character:FindFirstChild("HumanoidRootPart")
+		local humanoid = Character:FindFirstChild("Humanoid")
+		local handInvItem = Character:FindFirstChild("HandInvItem")
+
+		if not rootPart or not humanoid or humanoid.Health <= 0 or not handInvItem or not handInvItem.Value then 
+			isFishing = false
+			if idleLoopTrack then idleLoopTrack:Stop() idleLoopTrack = nil end
+			continue 
+		end
+
+		if handInvItem.Value.Name ~= "fishing_rod" then 
+			isFishing = false
+			if idleLoopTrack then idleLoopTrack:Stop() idleLoopTrack = nil end
+			continue 
+		end
+
+		-- Start Fishing Cycle
+		if not isFishing then
+			if not checkVoidAhead(rootPart) then
+				task.wait(0.5)
+				continue
+			end
+
+			isFishing = true
+			local launchDirection = rootPart.CFrame.LookVector.Unit
+
+			local inventoryFolder = ReplicatedStorage:WaitForChild("Inventories"):FindFirstChild(Player.Name) or ReplicatedStorage:WaitForChild("Inventories"):GetChildren()[1]
+			if not inventoryFolder then isFishing = false; continue end
+			local inventoryRod = inventoryFolder:WaitForChild("fishing_rod", 3)
+			if not inventoryRod then isFishing = false; continue end
+
+			local playAnims = (AutoFish.Values and AutoFish.Values["Play Casting Anims"]) ~= false
+			local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid
+
+			if idleLoopTrack then idleLoopTrack:Stop() idleLoopTrack = nil end
+
+			-- 1. Play the requested Initial Cast track (7789127251) once
+			if playAnims then
+				local castAnim = Instance.new("Animation")
+				castAnim.AnimationId = "rbxassetid://7789127251"
+				local castTrack = animator:LoadAnimation(castAnim)
+				castTrack.Looped = false
+				castTrack:Play()
+				task.delay(1.2, function() castAnim:Destroy() end)
+			end
+
+			-- 2. Build Arguments and Fire Projectile
+			local randomShotId = generateRandomString(8)
+			local randomCode = generateRandomString(8)
+			local launchOrigin = rootPart.Position + (launchDirection * 3)
+			local originX, originY, originZ = launchOrigin.X, launchOrigin.Y + 0.5, launchOrigin.Z
+
+			local velocityX = launchDirection.X * 12
+			local velocityY = 4.45 
+			local velocityZ = launchDirection.Z * 12
+
+			local fireArgs = {
+				[1] = inventoryRod,
+				[3] = "fisherman_bobber",
+				[4] = vec(originX, originY, originZ),
+				[5] = vec(originX, originY - 2, originZ),   
+				[6] = vec(velocityX, velocityY, velocityZ), 
+				[7] = randomCode,
+				[8] = { shotId = randomShotId, drawDurationSec = 0 },
+				[9] = workspace:GetServerTimeNow()
+			}
+
+			pcall(function()
+				if ProjectileRemote then
+					ProjectileRemote:InvokeServer(unpack(fireArgs, 1, 9))
+				end
+			end)
+
+			task.wait(0.8)
+
+			if playAnims and loops["auto fish"] then
+				local idleAnim = Instance.new("Animation")
+				idleAnim.AnimationId = "rbxassetid://7789132571"
+				idleLoopTrack = animator:LoadAnimation(idleAnim)
+				idleLoopTrack.Looped = true
+				idleLoopTrack:Play()
+			end
+
+			local initialPosition = rootPart.Position
+			local interrupted = false
+			local minigameApp = nil
+			local waitTimer = 0
+			local minigameWaitTime = (AutoFish.Values and AutoFish.Values["Minigame Wait Time"]) or 1.5
+
+			while waitTimer < 10 do
+				task.wait(0.05)
+				waitTimer += 0.05
+
+				local hasMoved = (rootPart.Position - initialPosition).Magnitude > 0.5
+				local isJumping = humanoid.FloorMaterial == Enum.Material.Air
+				local stillHoldingRod = (handInvItem.Value and handInvItem.Value.Name == "fishing_rod")
+
+				if hasMoved or isJumping or not stillHoldingRod then
+					interrupted = true
+					break
+				end
+
+				local playerGui = Player:FindFirstChild("PlayerGui")
+				if playerGui then
+					local actionBar = playerGui:FindFirstChild("ActionBarScreenGui")
+					if actionBar and actionBar:FindFirstChild("ActionBar") then
+						local app = actionBar.ActionBar:FindFirstChild("FishingMinigameApp")
+						if app then
+							minigameApp = app
+							break
+						end
+					end
+				end
+			end
+
+			if minigameApp and not interrupted then
+				if idleLoopTrack then idleLoopTrack:Stop() idleLoopTrack = nil end
+
+				local minigameContainer = minigameApp:FindFirstChild("3") and minigameApp["3"]:FindFirstChild("Minigame")
+				local elapsedMinigameTime = 0
+				local autoTrackVisual = (AutoFish.Values and AutoFish.Values["Visual UI Auto-Track"]) ~= false
+				local minigameInterrupted = false
+
+				while elapsedMinigameTime < minigameWaitTime and minigameApp.Parent ~= nil do
+					task.wait(0.01)
+					elapsedMinigameTime += 0.01
+
+					local hasMoved = (rootPart.Position - initialPosition).Magnitude > 0.5
+					local isJumping = humanoid.FloorMaterial == Enum.Material.Air
+					if hasMoved or isJumping then
+						minigameInterrupted = true
+						break
+					end
+
+					if autoTrackVisual and minigameContainer then
+						local marker = minigameContainer:FindFirstChild("Marker")
+						local fishZone = minigameContainer:FindFirstChild("FishZone")
+						if marker and fishZone then
+							fishZone.Position = fishZone.Position:Lerp(marker.Position, 0.35)
+						end
+					end
+				end
+
+				if minigameInterrupted then
+					if playAnims then
+						local lostAnim = Instance.new("Animation")
+						lostAnim.AnimationId = "rbxassetid://7789136489"
+						local lostTrack = animator:LoadAnimation(lostAnim)
+						lostTrack:Play()
+						task.delay(1.5, function() lostTrack:Stop() lostAnim:Destroy() end)
+					end
+
+					pcall(function()
+						if PullRemote then PullRemote:FireServer({success = false}) end
+					end)
+				else
+					if playAnims then
+						local successAnim = Instance.new("Animation")
+						successAnim.AnimationId = "rbxassetid://7789136489"
+						local successTrack = animator:LoadAnimation(successAnim)
+						successTrack:Play()
+						task.delay(1.5, function() successTrack:Stop() successAnim:Destroy() end)
+					end
+
+					pcall(function()
+						if PullRemote then PullRemote:FireServer({success = true}) end
+					end)
+				end
+
+				if minigameApp then pcall(function() minigameApp:Destroy() end) end
+				task.wait(1.2)
+			else
+				if idleLoopTrack then idleLoopTrack:Stop() idleLoopTrack = nil end
+
+				pcall(function()
+					if PullRemote then
+						PullRemote:FireServer({success = false})
+					end
+				end)
+
+				if minigameApp then pcall(function() minigameApp:Destroy() end) end
+				task.wait(0.5)
+			end
+
+			isFishing = false
+		end
+	end
+end)
+
+local consumeAnimation = "rbxassetid://11170405197"
+
+local function DoPaladinTP(humanoid)
+	if isConsuming then
+		return
+	end
+
+	isConsuming = true
+
+	local animator = humanoid:FindFirstChildOfClass("Animator")
+	if not animator then
+		isConsuming = false
+		return
+	end
+
+	local consumeAnim = Instance.new("Animation")
+	consumeAnim.AnimationId = consumeAnimation
+
+	local consumeTrack = animator:LoadAnimation(consumeAnim)
+
+	consumeTrack:Play(0) 
+
+	consumeTrack.Stopped:Wait()
+
+	local consumeArgs = {
+		{
+			item = inventoriesFolder:FindFirstChild(Player.Name):FindFirstChild("scepter")
+		}
+	}
+
+	game:GetService("ReplicatedStorage")
+		.rbxts_include.node_modules["@rbxts"].net.out._NetManaged.ConsumeItem
+		:InvokeServer(unpack(consumeArgs))
+	
+	task.wait(AutoLani.Values["TP Time"])
+	game:GetService("ReplicatedStorage")
+	["events-@easy-games/game-core:shared/game-core-networking@getEvents.Events"]
+		.useAbility
+		:FireServer("PALADIN_ABILITY")
+
+	game:GetService("ReplicatedStorage")
+		.rbxts_include.node_modules["@rbxts"].net.out._NetManaged.PaladinAbilityRequest
+		:FireServer({
+			target = game:GetService("Players"):FindFirstChild(AutoLani.Values["Player To TP"])
+		})
+
+	consumeTrack:Destroy()
+	consumeAnim:Destroy()
+
+	isConsuming = false
+end
+
+AutoLani.Callbacks.OnToggle = function(state)
+	loops["auto lani"] = state
+
+	task.spawn(function()
+		while loops["auto lani"] do
+			task.wait()
+
+			if isConsuming then
+				continue
+			end
+
+			if not Character then
+				continue
+			end
+
+			local humanoid = Character:FindFirstChild("Humanoid")
+			local handInvItem = Character:FindFirstChild("HandInvItem")
+
+			if not humanoid or humanoid.Health <= 0 then
+				continue
+			end
+
+			if not handInvItem or not handInvItem.Value then
+				continue
+			end
+
+			local targetName = AutoLani.Values["Player To TP"]
+
+			if not targetName or targetName == "" or targetName == "None" then
+				continue
+			end
+
+			if handInvItem.Value.Name == "scepter" then
+				DoPaladinTP(humanoid)
+			end
+		end
+	end)
+end
+
+workspace.ChildAdded:Connect(function(child)
+	if child.Name == "ServerOwl" then
+		task.delay(0.1, function()
+			local ownerId = child:GetAttribute("Owner")
+			if ownerId == Player.UserId then
+				activeOwl = child
+			end
+		end)
+	end
+end)
+
+workspace.ChildRemoved:Connect(function(child)
+	if child == activeOwl then
+		activeOwl = nil
+	end
+end)
+
+task.spawn(function()
+	while task.wait(0.1) do
+		if not WhisperConfig.Enabled then continue end
+
+		local targetName = WhisperConfig.TargetPlayerName
+		if not targetName or targetName == "" then continue end
+
+		local targetPlayer = Players:FindFirstChild(targetName)
+		if not targetPlayer then continue end
+
+		if not activeOwl then
+			useAbility:FireServer("SUMMON_OWL")
+			summonOwl:InvokeServer({targetPlayer})
+			task.wait(1.5) 
+			continue
+		end
+
+		local currentTargetId = activeOwl:GetAttribute("Target")
+		if currentTargetId ~= targetPlayer.UserId then
+			useAbility:FireServer("DEACTIVE_OWL")
+			task.wait(1)
+			continue
+		end
+
+		local character = targetPlayer.Character
+		if not character then continue end
+
+		local humanoid = character:FindFirstChild("Humanoid")
+		local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+		if not humanoid or not rootPart or humanoid.Health <= 0 then continue end
+
+		if WhisperConfig.AutoHeal then
+			if humanoid.Health <= WhisperConfig.HealThreshold then
+				if tick() - lastHealTime >= HEAL_COOLDOWN then
+					lastHealTime = tick()
+
+					owlAction:FireServer({
+						target = targetPlayer,
+						ability = "OWL_HEAL"
+					})
+				end
+			end
+		end
+
+		if WhisperConfig.AutoFly then
+			if rootPart.Position.Y <= WhisperConfig.FlyThreshold then
+				owlAction:FireServer({
+					target = targetPlayer,
+					ability = "OWL_LIFT"
+				})
+				task.wait(1) 
+			end
+		end
+	end
+end)
