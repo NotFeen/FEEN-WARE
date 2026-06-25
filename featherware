@@ -1320,7 +1320,7 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 	function mod:CreateMainWindow(loopsTableReference)
 		if not settingsCont then return end
 
-		local mainTargetGui = settingsCont:FindFirstAncestorOfClass("ScreenGui")
+		local mainTargetGui = PlayerGui:FindFirstChild("Featherware_ModuleListGui")
 		if not mainTargetGui then
 			warn("No ScreenGui found for module list")
 			return
@@ -1338,16 +1338,15 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		moduleListFrame.Size = UDim2.new(0, 250, 0, 50)
 		local savedPos = _G.SavedConfig[savedPosKey]
 
-		if savedPos then
-			moduleListFrame.Position = UDim2.new(
-				savedPos.XScale,
-				savedPos.XOffset,
-				savedPos.YScale,
-				savedPos.YOffset
-			)
-		else
-			moduleListFrame.Position = UDim2.new(1, -260, 0.1, 0)
-		end
+		local savedPos = _G.SavedConfig[savedPosKey]
+
+		moduleListFrame.Position = savedPos and UDim2.new(
+			savedPos.XScale,
+			savedPos.XOffset,
+			savedPos.YScale,
+			savedPos.YOffset
+		) or UDim2.new(1, -260, 0.1, 0)
+		
 		moduleListFrame.BackgroundTransparency = 1 
 		moduleListFrame.BorderSizePixel = 0
 		moduleListFrame.Active = true
@@ -1363,15 +1362,15 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		end
 		
 		task.spawn(function()
-			local lastPos
+			local last
 
 			while moduleListFrame.Parent do
 				task.wait(0.5)
 
 				local pos = moduleListFrame.Position
 
-				if pos ~= lastPos then
-					lastPos = pos
+				if not last or pos ~= last then
+					last = pos
 
 					_G.SavedConfig[savedPosKey] = {
 						XScale = pos.X.Scale,
@@ -2274,6 +2273,19 @@ end)
 
 local notificationsGui = CoreGui:FindFirstChild("Notifications")
 if notificationsGui then notificationsGui:Destroy() end
+
+local guiName = "Featherware_ModuleListGui"
+
+local old = Player:WaitForChild("PlayerGui"):FindFirstChild(guiName)
+if old then
+	old:Destroy()
+end
+
+local moduleGui = Instance.new("ScreenGui")
+moduleGui.Name = guiName
+moduleGui.ResetOnSpawn = false
+moduleGui.IgnoreGuiInset = true
+moduleGui.Parent = PlayerGui
 
 local gui = Instance.new("ScreenGui")
 gui.Name = "Notifications"
