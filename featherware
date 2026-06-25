@@ -7208,7 +7208,7 @@ end
 
 game.Workspace.ChildAdded:Connect(function(child)
 	if loops["bedesp"] then
-		if child:IsA("BasePart") and v.Name == "bed" then
+		if child:IsA("BasePart") and child.Name == "bed" then
 			if child:FindFirstChild("Bed") then
 
 				if not workspace:FindFirstChild("BedESP") then
