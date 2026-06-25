@@ -827,7 +827,8 @@ local loops = {
 	["auto lani"] = false,
 	["auto whisper"] = false,
 	["speed"] = false,
-	["infinite_jump"] = false
+	["infinite jump"] = false,
+	["bedesp"] = false
 }
 
 --REMOTE EVENTS/FUNCTIONS--
@@ -853,6 +854,11 @@ CollectRemote = NetRemotes:WaitForChild("CollectCollectableEntity")
 PunchRemote = NetRemotes:WaitForChild("RequestDragonPunch")
 DestroyPetrifiedRemote = NetRemotes:WaitForChild("DestroyPetrifiedPlayer")
 fireProjectileEvent = NetRemotes:WaitForChild("ProjectileFire")
+whisperEvents = NetRemotes:WaitForChild("OwlActionAbilities")
+useAbility = replicatedStorage:WaitForChild("events-@easy-games/game-core:shared/game-core-networking@getEvents.Events"):WaitForChild("useAbility")
+summonOwl = NetRemotes:WaitForChild("SummonOwl")
+entityDamaged = NetRemotes:WaitForChild("EntityDamageEvent")
+zap_reliable = replicatedStorage:WaitForChild("ZAP"):WaitForChild("ZAP_RELIABLE")
 
 if DamageBlock then
 	DamageBlock = DamageBlock.node_modules["@easy-games"]["block-engine"].node_modules["@rbxts"].net.out._NetManaged:FindFirstChild("DamageBlock")
@@ -1091,9 +1097,15 @@ if not Player.Character:FindFirstChild("Humanoid"):FindFirstChild("Animator") th
 	animator.Parent = Player.Character:FindFirstChild("Humanoid")
 end
 
-kaidaHitTrack = nil
 --Variables
+kaidaHitTrack = nil
 autoClickerThread = nil 
+
+currentWhisper = nil
+canUseNyxAbility = nil
+
+currentlyInFight = false
+currentFightTarget = nil
 
 lastSort = 2
 currentKaTarget = nil
@@ -1120,6 +1132,8 @@ local isDropping = false
 
 local lastShotTimes = {}
 local firingLocks = {} 
+local inCombat = {}
+COMBAT_TIMEOUT = 0.3
 local currentHoldTrack = nil 
 
 local resetTask = nil
@@ -1133,6 +1147,8 @@ local tweenInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirectio
 local DRAG_SMOOTHNESS = 0.2
 local topZIndex = 10
 local currentlyDragging = nil 
+
+kitAbilitiesGUI = Player.PlayerGui.ActionBarScreenGui
 
 --Functions
 
@@ -1304,22 +1320,40 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 	function mod:CreateMainWindow(loopsTableReference)
 		if not settingsCont then return end
 
-		local mainTargetGui = settingsCont:FindFirstAncestorOfClass("ScreenGui") 
-			or game:GetService("CoreGui"):FindFirstChildOfClass("ScreenGui") 
-			or game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):FindFirstChildOfClass("ScreenGui")
+		local mainTargetGui = settingsCont:FindFirstAncestorOfClass("ScreenGui")
+		if not mainTargetGui then
+			warn("No ScreenGui found for module list")
+			return
+		end
+		
+		local savedPosKey = uniquePrefix .. "_ModuleListPosition"
 
-		-- 1. THE STANDALONE CANVAS (Shifted to right side)
+		local existing = mainTargetGui:FindFirstChild("Featherware_PremiumModuleList")
+		if existing then
+			existing:Destroy()
+		end
+		
 		local moduleListFrame = Instance.new("Frame")
 		moduleListFrame.Name = "Featherware_PremiumModuleList"
 		moduleListFrame.Size = UDim2.new(0, 250, 0, 50)
-		moduleListFrame.Position = UDim2.new(1, -260, 0.1, 0) -- Hugs the right side of the screen
+		local savedPos = _G.SavedConfig[savedPosKey]
+
+		if savedPos then
+			moduleListFrame.Position = UDim2.new(
+				savedPos.XScale,
+				savedPos.XOffset,
+				savedPos.YScale,
+				savedPos.YOffset
+			)
+		else
+			moduleListFrame.Position = UDim2.new(1, -260, 0.1, 0)
+		end
 		moduleListFrame.BackgroundTransparency = 1 
 		moduleListFrame.BorderSizePixel = 0
 		moduleListFrame.Active = true
 		moduleListFrame.Visible = true
 		moduleListFrame.Parent = mainTargetGui
 
-		-- Scale Modifier for the slider
 		local listScale = Instance.new("UIScale", moduleListFrame)
 
 		if makeDraggable then
@@ -1327,33 +1361,53 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 		elseif mod.makeDraggable then
 			mod.makeDraggable(moduleListFrame)
 		end
+		
+		task.spawn(function()
+			local lastPos
 
-		-- 2. PREMIUM RIGHT-ALIGNED HEADER
+			while moduleListFrame.Parent do
+				task.wait(0.5)
+
+				local pos = moduleListFrame.Position
+
+				if pos ~= lastPos then
+					lastPos = pos
+
+					_G.SavedConfig[savedPosKey] = {
+						XScale = pos.X.Scale,
+						XOffset = pos.X.Offset,
+						YScale = pos.Y.Scale,
+						YOffset = pos.Y.Offset
+					}
+
+					saveConfigToPC()
+				end
+			end
+		end)
+
 		local listTitle = Instance.new("TextLabel")
 		listTitle.Size = UDim2.new(1, 0, 0, 30)
 		listTitle.BackgroundTransparency = 1
 		listTitle.Text = "FEATHERWARE"
 		listTitle.Font = Enum.Font.GothamBlack
 		listTitle.TextSize = 16
-		listTitle.TextXAlignment = Enum.TextXAlignment.Right -- Aligned right
-		listTitle.TextStrokeTransparency = 0.2 -- Darker, cleaner shadow
+		listTitle.TextXAlignment = Enum.TextXAlignment.Right
+		listTitle.TextStrokeTransparency = 0.2 
 		listTitle.TextStrokeColor3 = Color3.fromRGB(15, 15, 15)
 		listTitle.Parent = moduleListFrame
 
-		-- 3. UNBOUND VERTICAL LIST (No more scrolling frame)
 		local listCont = Instance.new("Frame")
 		listCont.Size = UDim2.new(1, 0, 0, 0)
 		listCont.Position = UDim2.new(0, 0, 0, 32)
 		listCont.BackgroundTransparency = 1
-		listCont.AutomaticSize = Enum.AutomaticSize.Y -- Expands downward infinitely
+		listCont.AutomaticSize = Enum.AutomaticSize.Y 
 		listCont.Parent = moduleListFrame
 
 		local listLayout = Instance.new("UIListLayout", listCont)
 		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-		listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right -- Forces text blocks to right edge
-		listLayout.Padding = UDim.new(0, 2) -- Tight premium spacing
+		listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right 
+		listLayout.Padding = UDim.new(0, 2) 
 
-		-- 4. GLOBALS & SETTINGS
 		_G.ModuleListEnabled = _G.ModuleListEnabled ~= nil and _G.ModuleListEnabled or true
 		_G.RainbowEnabled = _G.RainbowEnabled ~= nil and _G.RainbowEnabled or true
 		_G.StaticColor = _G.StaticColor or Color3.fromRGB(168, 85, 247)
@@ -1367,7 +1421,6 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 			moduleListFrame.Visible = state
 		end)
 
-		-- The new scaling slider
 		mod:CreateSlider("LIST SCALE", 0.5, 2.0, _G.ModuleListScale, function(val)
 			_G.ModuleListScale = val
 			listScale.Scale = val
@@ -1381,7 +1434,6 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 			_G.StaticColor = color
 		end)
 
-		-- 5. REFRESH METHOD (SORTED BY LENGTH)
 		local function refreshModuleListVisuals()
 			for _, child in ipairs(listCont:GetChildren()) do
 				if child:IsA("TextLabel") then child:Destroy() end
@@ -1394,7 +1446,6 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 				end
 			end
 
-			-- Custom Sort: Longest words first. If same length, sort alphabetical.
 			table.sort(activeKeys, function(a, b)
 				if string.len(a) == string.len(b) then
 					return a < b 
@@ -1409,7 +1460,7 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 				txt.Text = string.upper(rawKey)
 				txt.Font = Enum.Font.GothamBold
 				txt.TextSize = 14
-				txt.TextXAlignment = Enum.TextXAlignment.Right -- Aligned right
+				txt.TextXAlignment = Enum.TextXAlignment.Right 
 				txt.TextStrokeTransparency = 0.25
 				txt.TextStrokeColor3 = Color3.fromRGB(10, 10, 10)
 				txt.LayoutOrder = i
@@ -1419,7 +1470,6 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 
 		refreshModuleListVisuals()
 
-		-- Loop checker
 		task.spawn(function()
 			local lastHash = ""
 			while task.wait(0.1) do
@@ -1434,7 +1484,6 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 			end
 		end)
 
-		-- 6. LIVE CHROMA MOTOR
 		task.spawn(function()
 			local hue = 0
 			while task.wait() do
@@ -1442,7 +1491,7 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 
 				if _G.RainbowEnabled then
 					hue = (hue + 0.0025) % 1
-					targetColor = Color3.fromHSV(hue, 0.55, 1) -- Slightly pastel for a cleaner look
+					targetColor = Color3.fromHSV(hue, 0.55, 1) 
 				end
 
 				listTitle.TextColor3 = targetColor
@@ -1951,12 +2000,27 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 	function mod:CreateColorPicker(cName, defaultColor, cCallback)
 		local settingID = uniquePrefix .. "_" .. cName
 
-		if _G.SavedConfig[settingID] ~= nil then
-			local savedRGB = _G.SavedConfig[settingID]
-			defaultColor = Color3.fromRGB(savedRGB.R / 255, savedRGB.G / 255, savedRGB.B / 255)
-		else
-			_G.SavedConfig[settingID] = {R = math.floor(defaultColor.R * 255), G = math.floor(defaultColor.G * 255), B = math.floor(defaultColor.B * 255)}
-		end
+			if _G.SavedConfig[settingID] ~= nil then
+				local savedRGB = _G.SavedConfig[settingID]
+
+				defaultColor = Color3.fromRGB(
+					savedRGB.R or 255,
+					savedRGB.G or 255,
+					savedRGB.B or 255
+				)
+			else
+				_G.SavedConfig[settingID] = {
+					R = math.floor(defaultColor.R * 255),
+					G = math.floor(defaultColor.G * 255),
+					B = math.floor(defaultColor.B * 255)
+				}
+			end
+
+			mod.Values[cName] = defaultColor
+
+			if cCallback then
+				cCallback(defaultColor)
+			end
 
 		local cFrame = Instance.new("Frame", settingsCont)
 		cFrame.Size = UDim2.new(1, 0, 0, 45)
@@ -2062,21 +2126,41 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 
 		if cCallback then cCallback(defaultColor) end
 
-		local function updateColor()
-			local r = math.clamp(math.floor(tonumber(rSlider.Text) or (defaultColor.R * 255)), 0, 255)
-			local g = math.clamp(math.floor(tonumber(gSlider.Text) or (defaultColor.G * 255)), 0, 255)
-			local b = math.clamp(math.floor(tonumber(bSlider.Text) or (defaultColor.B * 255)), 0, 255)
+			local function updateColor()
+				local r = math.clamp(tonumber(rSlider.Text) or math.floor(defaultColor.R * 255), 0, 255)
+				local g = math.clamp(tonumber(gSlider.Text) or math.floor(defaultColor.G * 255), 0, 255)
+				local b = math.clamp(tonumber(bSlider.Text) or math.floor(defaultColor.B * 255), 0, 255)
 
-			rSlider.Text = tostring(r)
-			gSlider.Text = tostring(g)
-			bSlider.Text = tostring(b)
+				r = math.floor(r)
+				g = math.floor(g)
+				b = math.floor(b)
 
-			_G.SavedConfig[settingID] = {R = r, G = g, B = b}
-			saveConfigToPC()
+				rSlider.Text = tostring(r)
+				gSlider.Text = tostring(g)
+				bSlider.Text = tostring(b)
 
-			local finalColor = Color3.fromRGB(r, g, b)
-			if cCallback then cCallback(finalColor) end
-		end
+				local finalColor = Color3.fromRGB(r, g, b)
+
+				mod.Values[cName] = finalColor
+
+				_G.SavedConfig[settingID] = {
+					R = r,
+					G = g,
+					B = b
+				}
+
+				saveConfigToPC()
+
+				wheelBtn.BackgroundColor3 = finalColor
+
+				if cCallback then
+					cCallback(finalColor)
+				end
+
+				if mod.Callbacks.OnValueChanged then
+					mod.Callbacks.OnValueChanged(cName, finalColor)
+				end
+			end
 
 		local isDragging = false
 
@@ -2176,14 +2260,14 @@ mainScreenUI.DisplayOrder = 5000
 mainScreenUI:SetAttribute("Running", true)
 
 mainScreenUI:GetAttributeChangedSignal("Running"):Connect(function()
-		
+
 	saveConfigToPC()
-	
+
 	if mainScreenUI:GetAttribute("Running") == false then
 		for index, value in pairs(loops) do
 			loops[index] = false
 		end
-		
+
 		mainScreenUI:Destroy()
 	end
 end)
@@ -2826,6 +2910,58 @@ ESP:CreateColorPicker("3D Box Color", Color3.new(0.333333, 0, 0.498039))
 ESP:CreateColorPicker("2D Box Color", Color3.new(0.333333, 0, 0.498039))
 ESP:CreateColorPicker("Chams Color", Color3.new(0.333333, 0, 0.498039))
 
+BedESP = Visuals:CreateButton("BedESP", nil, true)
+BedESP:CreateColorPicker("FillColor", Color3.new(0.333333, 0, 0.498039), function(value)
+	if loops["bedesp"] then
+		if workspace:FindFirstChild("BedESP") then
+			for i, highlight in pairs(workspace.BedESP:GetChildren()) do
+				if highlight and highlight:IsA("Highlight") then
+					highlight.FillColor = value
+				end
+			end
+		end
+	end
+end)
+BedESP:CreateSlider("Fill Transparency", 0, 1, 0.5, nil, 0.1, function(value)
+	if loops["bedesp"] then
+		if workspace:FindFirstChild("BedESP") then
+			for i, highlight in pairs(workspace.BedESP:GetChildren()) do
+				if highlight and highlight:IsA("Highlight") then
+					highlight.FillTransparency = value
+				end
+			end
+		end
+	end
+end)
+
+BedESP:CreateToggle("Use Outline", nil, function(value)
+	if loops["bedesp"] then
+		if workspace:FindFirstChild("BedESP") then
+			for i, highlight in pairs(workspace.BedESP:GetChildren()) do
+				if highlight and highlight:IsA("Highlight") then
+					if value == true then
+						highlight.OutlineTransparency = 0
+					else
+						highlight.OutlineTransparency = 1
+					end
+				end
+			end
+		end
+	end
+end)
+BedESP:CreateColorPicker("OutlineColor", Color3.new(1, 1, 1), function(value)
+	if loops["bedesp"] then
+		if workspace:FindFirstChild("BedESP") then
+			for i, highlight in pairs(workspace.BedESP:GetChildren()) do
+				if highlight and highlight:IsA("Highlight") then
+					highlight.OutlineColor = value
+				end
+			end
+		end
+	end
+end)
+
+
 FakeStats = Visuals:CreateButton("Fake Stats", nil, true)
 FakeStats:CreateTextbox("Clan", tostring(orginalClan), function(value)
 	if loops["fake stats"] then
@@ -3209,7 +3345,7 @@ end)
 RunService.Heartbeat:Connect(function()
 	if loops["infinite_jump"] == false then return end
 
-	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space)then
 		local char = Player.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
@@ -3364,7 +3500,7 @@ Killaura.Callbacks.OnToggle = function(state)
 			end
 
 			if Killaura.Values["Require Sword Equipped"] == true then
-				if not t_find(swords, tostring(handItem.Value)) then
+				if not table.find(swords, tostring(handItem.Value)) then
 					currentKaTarget = nil
 					kaHighlight.Adornee = nil
 					continue
@@ -3751,7 +3887,6 @@ KaidaKa.Callbacks.OnToggle = function(state)
 			if KaidaKa.Values["Manual Swing"] == true and clicking == false then
 				continue
 			end
-			
 			local humanoid = Player.Character and Player.Character:FindFirstChild("Humanoid")
 			if humanoid then
 				local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -3760,10 +3895,17 @@ KaidaKa.Callbacks.OnToggle = function(state)
 					animator.Parent = humanoid
 				end
 
+				if not kaidaHitTrack or kaidaHitTrack.Length == 0 or kaidaHitTrack.Animation.Parent == nil then
+					kaidaHitTrack = animator:LoadAnimation(swingAnimation)
+					kaidaHitTrack.Priority = Enum.AnimationPriority.Action
+					kaidaHitTrack.Looped = false
+				end
+
 				if not kaidaHitTrack.IsPlaying then
 					kaidaHitTrack:Play()
 				end
 			end
+
 
 			game:GetService("ReplicatedStorage")
 				:WaitForChild("rbxts_include")
@@ -6821,22 +6963,24 @@ AutoClicker.Callbacks.OnToggle = function(state)
 				local mouse = Player:GetMouse()
 				local char = Player.Character
 				local hum = char and char:FindFirstChild("Humanoid")
-				
+
 				if AutoClicker.Values["Require Mouse Held"] then
 					if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
 						continue
 					end
 				end
-				
+
 				if hum and hum.Health > 0 then
 					if mouse and mouse.Target then
 						if char:FindFirstChild("HandInvItem") then
 							local HandInvItem = char.HandInvItem
+							if HandInvItem.Value then
 							local ItemName = HandInvItem.Value.Name
-							
+								
 							if AutoClicker.Values["Sword Swings"] then
-								if ItemName == "sword" then
-									
+								if table.find(swords, ItemName) then
+										
+									end
 								end
 							end
 						end
@@ -6851,3 +6995,227 @@ AutoClicker.Callbacks.OnToggle = function(state)
 		end
 	end
 end
+
+workspace.ChildAdded:Connect(function(child)
+	if loops["auto whisper"] then
+		if child.Name == "ServerOwl" then
+			if child:GetAttribute("Owner") then
+				local owner = child:GetAttribute("Owner")
+				if owner == Player.UserId then
+					currentWhisper = child
+				end
+			end
+		end
+	end
+end)
+
+workspace.ChildRemoved:Connect(function(child)
+	if child == currentWhisper then
+		currentWhisper = nil
+	end
+end)
+
+AutoWhisper.Callbacks.OnToggle = function(state)
+	loops["auto whisper"] = state
+
+	if loops["auto whisper"] == false then
+		currentWhisper = nil
+	end
+
+	if loops["auto whisper"] then
+		task.spawn(function()
+			while loops["auto whisper"] do
+				task.wait(0.1)
+
+				if currentWhisper then
+					local targetPlayer = currentWhisper:GetAttribute("Target")
+					if targetPlayer then
+						local targetCharacter = Players:GetPlayerByUserId(targetPlayer).Character
+
+						if targetCharacter and targetCharacter:FindFirstChild("Humanoid") and targetCharacter.Humanoid.Health > 0 then
+							if AutoWhisper.Values["Auto Heal"] then
+								local HealthPercentage = AutoWhisper.Values["Heal when below %"]
+
+								local HealthToHeal = humanoid.MaxHealth * (HealthPercentage / 100)
+								print(targetCharacter.Humanoid.Health, HealthToHeal)
+
+								if targetCharacter.Humanoid.Health <= HealthToHeal then
+									local args = {
+										{
+											target = game:GetService("Players"):WaitForChild(targetCharacter.Name),
+											ability = "OWL_HEAL"
+										}
+									}
+									print("done")
+									whisperEvents:FireServer(unpack(args))
+								end
+							end
+
+							if AutoWhisper.Values["Auto Fly"] then
+								local belowStuds = AutoWhisper.Values["Fly when below"]
+								if targetCharacter and targetCharacter:FindFirstChild("Humanoid") and targetCharacter.Humanoid.Health > 0 then
+									local HRP = targetCharacter:FindFirstChild("HumanoidRootPart")
+									if HRP then
+										if HRP.Position.Y <= belowStuds then
+											local args = {
+												{
+													target = game:GetService("Players"):WaitForChild(targetCharacter.Name),
+													ability = "OWL_LIFT"
+												}
+											}
+											whisperEvents:FireServer(unpack(args))
+										end
+									end
+								end
+							end
+						end
+					end
+				else
+					if AutoWhisper.Values["Auto Whisper Player"] then
+						if not currentWhisper then
+							if Player and Player.Character then
+								local character = Player.Character
+								local humanoid = character:FindFirstChild("Humanoid")
+								if humanoid and humanoid.Health > 0 then
+									local HandInvItem = character:FindFirstChild("HandInvItem")
+									local equippedItemName = HandInvItem.Value.Name
+									if equippedItemName == "owl_orb" then
+										local whisperTarget = AutoWhisper.Values["Player"]
+										if whisperTarget == nil or whisperTarget == "" or whisperTarget == "None" then 
+											continue 
+										end										
+										local targetPlayer = game:GetService("Players"):FindFirstChild(whisperTarget)
+										if targetPlayer then
+											print("yass")
+
+											local abilityArgs = {
+												"SUMMON_OWL"
+											}
+
+											useAbility:FireServer(unpack(abilityArgs))
+
+
+											local args = {
+												targetPlayer
+											}
+
+											summonOwl:InvokeServer(unpack(args))
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+
+			end
+
+		end)
+	end
+end
+
+AutoNyx.Callbacks.OnToggle = function(state)
+	loops["auto nyx"] = state 
+end
+
+entityDamaged.OnClientEvent:Connect(function()
+	if loops["auto nyx"] then
+		print("yaaaaaaaaa damaged")
+	end
+end)
+
+
+zap_reliable.OnClientEvent:Connect(function(b, instances)
+	local eventId = buffer.readu8(b, 0)
+	if eventId == 0 then
+		local target = instances[1]
+
+		currentlyInFight = true
+		currentFightTarget = target
+
+		print("target name:", target.Name)
+		print("target in workspace:", target:GetFullName())
+
+		if not inCombat[Player.Name] then
+			print(Player.Name, "entered combat!")
+		end
+
+		if inCombat[Player.Name] then
+			task.cancel(inCombat[Player.Name])
+		end
+
+		inCombat[Player.Name] = task.delay(COMBAT_TIMEOUT, function()
+			inCombat[Player.Name] = nil
+			currentlyInFight = false
+			currentFightTarget = nil
+			print(Player.Name, "left combat!")
+		end)
+	end
+end)
+
+if workspace:FindFirstChild("BedESP") then workspace.BedESP:Destroy() end
+
+bedESPFolder = Instance.new("Folder", workspace)
+bedESPFolder.Name = "BedESP"
+
+BedESP.Callbacks.OnToggle = function(state)
+	loops["bedesp"] = state 
+	
+	if loops["bedesp"] then
+		for _, v in pairs(workspace:GetDescendants()) do
+			if v:IsA("BasePart") and v.Name == "bed" then
+				if v:FindFirstChild("Bed") then
+					
+					if not workspace:FindFirstChild("BedESP") then
+						bedESPFolder = Instance.new("Folder", workspace)
+						bedESPFolder.Name = "BedESP"
+					end
+					
+					local highlight = Instance.new("Highlight", game.Workspace.BedESP)
+					highlight.Adornee = v:FindFirstChild("Bed")
+					print(BedESP.Values["FillColor"])
+					highlight.FillColor = BedESP.Values["FillColor"]
+					highlight.FillTransparency = BedESP.Values["Fill Transparency"]
+					
+					if BedESP.Values["Use Outline"] then
+						highlight.OutlineColor = BedESP.Values["OutlineColor"]
+					else
+						highlight.OutlineTransparency = 1
+					end
+				end
+			end
+		end
+	end
+	
+	if not loops["bedesp"] then
+		if workspace:FindFirstChild("BedESP") then
+			workspace.BedESP:Destroy()
+		end
+	end
+end
+
+game.Workspace.ChildAdded:Connect(function(child)
+	if loops["bedesp"] then
+		if child:IsA("BasePart") and v.Name == "bed" then
+			if child:FindFirstChild("Bed") then
+
+				if not workspace:FindFirstChild("BedESP") then
+					bedESPFolder = Instance.new("Folder", workspace)
+					bedESPFolder.Name = "BedESP"
+				end
+
+				local highlight = Instance.new("Highlight", game.Workspace.BedESP)
+				highlight.Adornee = child:FindFirstChild("Bed")
+				print(BedESP.Values["FillColor"])
+				highlight.FillColor = BedESP.Values["FillColor"]
+				highlight.FillTransparency = BedESP.Values["Fill Transparency"]
+
+				if BedESP.Values["Use Outline"] then
+					highlight.OutlineColor = BedESP.Values["OutlineColor"]
+				else
+					highlight.OutlineTransparency = 1
+					end
+				end
+		end
+	end
+end)
