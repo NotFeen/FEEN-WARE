@@ -1,3 +1,7 @@
+repeat
+	task.wait()
+until Player.PlayerGui and Player.Character
+
 bootstrapCode = [[
     loadstring(game:HttpGet("https://raw.githubusercontent.com/NotFeen/FEEN-WARE/refs/heads/main/featherware"))()
 ]]
@@ -3114,7 +3118,7 @@ function FW:CreateCategory(name)
 		saveConfigToPC()
 	end)
 
-	function category:CreateButton(btnName, callback, allowHotkey)
+	function category:CreateButton(btnName, callback, allowHotkey, ClosetButton)
 		local toggleID = name .. "_" .. btnName .. "_MainToggle"
 		local hotkeyID = name .. "_" .. btnName .. "_Hotkey"
 
