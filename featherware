@@ -5775,7 +5775,7 @@ task.spawn(function()
 		if not animator then
 			if Player.Character then
 				Animator = Instance.new("Animator")
-				Animator.Parent = Player.Character.Humanoid
+				Animator.Parent = cachedHumanoid
 			end
 		end
 
@@ -8487,8 +8487,8 @@ AutoMelody.Callbacks.OnToggle = function(state)
 				if not Character then continue end
 
 				rootPart = Character:FindFirstChild("HumanoidRootPart")
-			humanoid = Character:FindFirstChild("Humanoid")
-				 handInvItem = Character:FindFirstChild("HandInvItem")
+				humanoid = Character:FindFirstChild("Humanoid")
+				handInvItem = Character:FindFirstChild("HandInvItem")
 
 				if not rootPart or not humanoid or humanoid.Health <= 0 or not handInvItem or not handInvItem.Value then 
 					continue 
@@ -8623,14 +8623,14 @@ task.spawn(function()
 			end
 
 			-- 2. Build Arguments and Fire Projectile
-			 randomShotId = generateRandomString(8)
-			 randomCode = generateRandomString(8)
-			 launchOrigin = rootPart.Position + (launchDirection * 3)
-		 originX, originY, originZ = launchOrigin.X, launchOrigin.Y + 0.5, launchOrigin.Z
+			randomShotId = generateRandomString(8)
+			randomCode = generateRandomString(8)
+			launchOrigin = rootPart.Position + (launchDirection * 3)
+			originX, originY, originZ = launchOrigin.X, launchOrigin.Y + 0.5, launchOrigin.Z
 
-			 velocityX = launchDirection.X * 12
-	velocityY = 4.45 
-			 velocityZ = launchDirection.Z * 12
+			velocityX = launchDirection.X * 12
+			velocityY = 4.45 
+			velocityZ = launchDirection.Z * 12
 
 			local fireArgs = {
 				[1] = inventoryRod,
@@ -8783,7 +8783,7 @@ local function DoPaladinTP(humanoid)
 	consumeAnim = Instance.new("Animation")
 	consumeAnim.AnimationId = consumeAnimation
 
-consumeTrack = animator:LoadAnimation(consumeAnim)
+	consumeTrack = animator:LoadAnimation(consumeAnim)
 
 	consumeTrack:Play(0) 
 
@@ -8832,8 +8832,8 @@ AutoLani.Callbacks.OnToggle = function(state)
 				continue
 			end
 
-			 humanoid = Character:FindFirstChild("Humanoid")
-			 handInvItem = Character:FindFirstChild("HandInvItem")
+			humanoid = Character:FindFirstChild("Humanoid")
+			handInvItem = Character:FindFirstChild("HandInvItem")
 
 			if not humanoid or humanoid.Health <= 0 then
 				continue
@@ -8856,7 +8856,7 @@ AutoLani.Callbacks.OnToggle = function(state)
 	end)
 end
 
- speedThread = nil
+speedThread = nil
 
 Speed.Callbacks.OnToggle = function(value)
 
@@ -8995,7 +8995,7 @@ AutoWhisper.Callbacks.OnToggle = function(state)
 							if AutoWhisper.Values["Auto Heal"] then
 								HealthPercentage = AutoWhisper.Values["Heal when below %"]
 
-								 HealthToHeal = humanoid.MaxHealth * (HealthPercentage / 100)
+								HealthToHeal = humanoid.MaxHealth * (HealthPercentage / 100)
 								print(targetCharacter.Humanoid.Health, HealthToHeal)
 
 								if targetCharacter.Humanoid.Health <= HealthToHeal then
@@ -9037,31 +9037,31 @@ AutoWhisper.Callbacks.OnToggle = function(state)
 								if humanoid and humanoid.Health > 0 then
 									local HandInvItem = character:FindFirstChild("HandInvItem")
 									if HandInvItem and HandInvItem.Value then
-									local equippedItemName = HandInvItem.Value.Name
-									if equippedItemName == "owl_orb" then
-										local whisperTarget = AutoWhisper.Values["Player"]
-										if whisperTarget == nil or whisperTarget == "" or whisperTarget == "None" then 
-											continue 
-										end										
-										local targetPlayer = game:GetService("Players"):FindFirstChild(whisperTarget)
-										if targetPlayer then
+										local equippedItemName = HandInvItem.Value.Name
+										if equippedItemName == "owl_orb" then
+											local whisperTarget = AutoWhisper.Values["Player"]
+											if whisperTarget == nil or whisperTarget == "" or whisperTarget == "None" then 
+												continue 
+											end										
+											local targetPlayer = game:GetService("Players"):FindFirstChild(whisperTarget)
+											if targetPlayer then
 
-											local abilityArgs = {
-												"SUMMON_OWL"
-											}
+												local abilityArgs = {
+													"SUMMON_OWL"
+												}
 
-											useAbility:FireServer(unpack(abilityArgs))
+												useAbility:FireServer(unpack(abilityArgs))
 
 
-											local args = {
-												targetPlayer
-											}
+												local args = {
+													targetPlayer
+												}
 
-											summonOwl:InvokeServer(unpack(args))
+												summonOwl:InvokeServer(unpack(args))
+											end
 										end
 									end
-									end
-									end
+								end
 							end
 						end
 					end
@@ -9161,7 +9161,7 @@ game.Workspace.ChildAdded:Connect(function(child)
 					bedESPFolder.Name = "BedESP"
 				end
 
-				 highlight = Instance.new("Highlight", game.Workspace.BedESP)
+				highlight = Instance.new("Highlight", game.Workspace.BedESP)
 				highlight.Adornee = child:FindFirstChild("Bed")
 				highlight.FillColor = BedESP.Values["FillColor"]
 				highlight.FillTransparency = BedESP.Values["Fill Transparency"]
@@ -9240,7 +9240,7 @@ camera.ChildAdded:Connect(function(child)
 	end
 end)
 
- viewmodel = camera:WaitForChild("Viewmodel")
+viewmodel = camera:WaitForChild("Viewmodel")
 
 viewmodel.ChildAdded:Connect(function(child)
 	task.wait(0.05)
@@ -9372,7 +9372,7 @@ LongJump.Callbacks.OnToggle = function(state)
 			localRootPart = character and character:FindFirstChild("HumanoidRootPart")
 
 			if localRootPart then
-				 replicatedStorage = game:GetService("ReplicatedStorage")
+				replicatedStorage = game:GetService("ReplicatedStorage")
 				local netManaged = replicatedStorage:WaitForChild("rbxts_include")
 					:WaitForChild("node_modules")
 					:WaitForChild("@rbxts")
@@ -9403,7 +9403,7 @@ LongJump.Callbacks.OnToggle = function(state)
 										if currentItemName and currentItemName ~= "" then
 											oldItemInst = playerInv:FindFirstChild(currentItemName)
 										end
-										 equipArgs = {{ hand = fireballInst }}
+										equipArgs = {{ hand = fireballInst }}
 										netManaged:WaitForChild("SetInvItem"):InvokeServer(unpack(equipArgs))
 									end
 
@@ -9470,7 +9470,7 @@ LongJump.Callbacks.OnToggle = function(state)
 		end
 
 		character = Players.LocalPlayer.Character
-		 localRootPart = character and character:FindFirstChild("HumanoidRootPart")
+		localRootPart = character and character:FindFirstChild("HumanoidRootPart")
 
 		if localRootPart then
 			localRootPart.AssemblyLinearVelocity = Vector3.new(0, -60, 0)
@@ -9631,7 +9631,7 @@ local function updateChestESP(billboard, inventoryFolder)
 	container = billboard:FindFirstChild("Container")
 	if not container then return end
 
-	 currentItems = {}
+	currentItems = {}
 	for _, obj in pairs(inventoryFolder:GetChildren()) do
 		if obj.Name ~= "ChestOwner" then
 			table.insert(currentItems, obj.Name)
@@ -9868,11 +9868,11 @@ local function applyTracer(obj, isPreview)
 		end
 
 		trail = getEffect(obj, "Trail") or getEffect(handle, "Trail")
-	 beam = getEffect(obj, "Beam") or getEffect(handle, "Beam")
+		beam = getEffect(obj, "Beam") or getEffect(handle, "Beam")
 		particle = getEffect(obj, "ParticleEmitter") or getEffect(handle, "ParticleEmitter")
 
 		if trail then
-			 colorVal = ProjectileTracers.Values["Color"]
+			colorVal = ProjectileTracers.Values["Color"]
 
 			if typeof(colorVal) == "Color3" and colorVal.R == 0 and colorVal.G == 0 and colorVal.B == 0 then
 				trail.Texture = "rbxassetid://446111719" 
@@ -10266,9 +10266,9 @@ local function startFlying()
 			if not isTyping then
 				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 					targetYVelocity = FLY_UP_SPEED
-					end
+				end
 			end
-			
+
 			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
 				targetYVelocity = -FLY_UP_SPEED
 			end
@@ -10278,7 +10278,7 @@ local function startFlying()
 	end)
 end
 
- function stopFlying()
+function stopFlying()
 	if flyConnection then
 		flyConnection:Disconnect()
 		flyConnection = nil
@@ -10302,10 +10302,10 @@ end
 
 Player.OnTeleport:Connect(function(teleportState)
 	if teleportState == Enum.TeleportState.InProgress then
-		
+
 		if mainScreenUI and mainScreenUI:GetAttribute("Running") == true then
 
-		queue_on_teleport(bootstrapCode)
-        end 
+			queue_on_teleport(bootstrapCode)
+		end 
 	end
 end)
