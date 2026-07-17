@@ -3188,48 +3188,50 @@ function FW:CreateCategory(name)
 		nameLabel.TextSize = 22
 
 		-- 3. Upgraded CLOSET Button
-		local closetBtn = Instance.new("TextButton", leftContainer)
-		closetBtn.Name = "ClosetBtn"
-		closetBtn.Size = UDim2.new(0, 52, 0, 18)
-		closetBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50) -- Softer background
-		closetBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
-		closetBtn.Text = "CLOSET"
-		closetBtn.FontFace = Font.fromName(textFont)
-		closetBtn.TextSize = 10
-		closetBtn.AutoButtonColor = true
-		closetBtn.LayoutOrder = 2
+		
+		local closetDecision = ClosetButton == true
+		local closetBtn
 
-		-- Make the CLOSET button look premium
-		local closetCorner = Instance.new("UICorner", closetBtn)
-		closetCorner.CornerRadius = UDim.new(0, 4)
+		if closetDecision then
+			closetBtn = Instance.new("TextButton")
+			closetBtn.Parent = leftContainer
+			closetBtn.Name = "ClosetBtn"
+			closetBtn.Size = UDim2.new(0, 52, 0, 18)
+			closetBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+			closetBtn.TextColor3 = Color3.fromRGB(220, 220, 220)
+			closetBtn.Text = "CLOSET"
+			closetBtn.FontFace = Font.fromName(textFont)
+			closetBtn.TextSize = 10
+			closetBtn.LayoutOrder = 2
 
-		local closetStroke = Instance.new("UIStroke", closetBtn)
-		closetStroke.Color = Color3.fromRGB(70, 70, 70)
-		closetStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+			Instance.new("UICorner", closetBtn).CornerRadius = UDim.new(0, 4)
 
-		-- 4. Dynamic Sizing Logic
-		-- This calculates exactly where the CLOSET button should go, and enforces scrolling ONLY if needed
-		local function updateLayout()
-			local textWidth = nameLabel.TextBounds.X
-			-- Max available width = total container minus CLOSET button width and padding
-			local maxTextWidth = leftContainer.AbsoluteSize.X - closetBtn.AbsoluteSize.X - listLayout.Padding.Offset
-
-			if textWidth <= maxTextWidth then
-				-- Fits perfectly: Size the frame exactly to the text
-				nameScroll.Size = UDim2.new(0, textWidth, 1, 0)
-				nameScroll.CanvasSize = UDim2.new(0, textWidth, 0, 0)
-			else
-				-- Too long: Cap the width so CLOSET stays visible, and enable the canvas
-				nameScroll.Size = UDim2.new(0, maxTextWidth, 1, 0)
-				nameScroll.CanvasSize = UDim2.new(0, textWidth, 0, 0)
-			end
+			local stroke = Instance.new("UIStroke", closetBtn)
+			stroke.Color = Color3.fromRGB(70, 70, 70)
+			stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 		end
 
-		-- Update layout whenever text changes or GUI resizes
+		local function updateLayout()
+			local textWidth = nameLabel.TextBounds.X
+
+			local maxTextWidth = leftContainer.AbsoluteSize.X
+
+			if closetBtn then
+				maxTextWidth -= closetBtn.AbsoluteSize.X + listLayout.Padding.Offset
+			end
+
+			if textWidth <= maxTextWidth then
+				nameScroll.Size = UDim2.new(0, textWidth, 1, 0)
+			else
+				nameScroll.Size = UDim2.new(0, maxTextWidth, 1, 0)
+			end
+
+			nameScroll.CanvasSize = UDim2.new(0, textWidth, 0, 0)
+		end
+
 		nameLabel:GetPropertyChangedSignal("TextBounds"):Connect(updateLayout)
 		leftContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateLayout)
-		task.defer(updateLayout) -- Initial calculation
-
+		task.defer(updateLayout)
 		-- Scroll logic: Only fires if the Canvas is larger than the visible window
 		local isHovering = false
 		btn.MouseEnter:Connect(function()
@@ -3243,7 +3245,7 @@ function FW:CreateCategory(name)
 						tween(nameScroll, {CanvasPosition = Vector2.new(maxScroll, 0)}, 2)
 						task.wait(2.5)
 						if not isHovering then break end
-						tween(nameScroll, {CanvasPosition = Vector2.new(0, 0)}, 0.5)
+						tween(nameScroll, {CanvasPosition = Vector2.new(0, 0)}, 1)
 						task.wait(1)
 					end
 				end)
@@ -3370,22 +3372,24 @@ function FW:CreateCategory(name)
 			arrow.Rotation = settingsCont.Visible and 90 or 0
 		end)
 
-		closetBtn.MouseButton1Click:Connect(function()
-			print("done mud")
-			local BTTNsettings = closetSettings[string.lower(btnName)]
-			if BTTNsettings then
+		if closetBtn then
+			closetBtn.MouseButton1Click:Connect(function()
+				local BTTNsettings = closetSettings[string.lower(btnName)]
+				if not BTTNsettings then
+					return
+				end
+
 				for key, value in pairs(BTTNsettings) do
-					-- Check if we registered a visual update function for this specific setting
 					if mod.UpdateFunctions[key] then
 						mod.UpdateFunctions[key](value)
 					else
-						-- Fallback just in case
 						mod.Values[key] = value
 					end
 				end
+
 				print("Applied CLOSET settings for:", btnName)
-			end
-		end)
+			end)
+		end
 
 		injectElements(mod, settingsCont, name .. "_" .. btnName)
 
@@ -3427,7 +3431,7 @@ Kits = FW:CreateCategory("Kits")
 
 --COMBAT
 
-Killaura = Combat:CreateButton("Killaura",nil, true)
+Killaura = Combat:CreateButton("Killaura",nil, true, true)
 Killaura:CreateToggle("INF TP REACH", false, nil)
 Killaura:CreateSlider("TP Reach", 1, 10000, 1000)
 Killaura:CreateToggle("Manual Swing", false, nil)
@@ -3466,7 +3470,7 @@ Killaura:CreateToggle("Check If Sophia Frozen", true, nil)
 Killaura:CreateToggle("Swing Animation", true, nil)	
 Killaura:CreateSlider("Swing Speed", 0.01, 0.5, 0.12, nil, 0.001)
 
-KaidaKa = Combat:CreateButton("KaidaKa",nil, true)
+KaidaKa = Combat:CreateButton("KaidaKa",nil, true, true)
 KaidaKa:CreateToggle("Manual Swing", false, nil)
 KaidaKa:CreateSlider("Hit Delay", 0.000001, 1, 0.1, nil, 0.005)
 KaidaKa:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
@@ -3479,7 +3483,7 @@ KaidaKa:CreateToggle("Highlight Target", false, nil)
 KaidaKa:CreateToggle("Require Claw Equipped", true, nil)
 KaidaKa:CreateToggle("Check If Sophia Frozen", true, nil)
 
-AimAssist = Combat:CreateButton("Aim Assist",nil, true)
+AimAssist = Combat:CreateButton("Aim Assist",nil, true, true)
 AimAssist:CreateSlider("Range", 1, 150, 100, nil)
 AimAssist:CreateSlider("Smoothness", 0, 100, 50, nil)
 AimAssist:CreateSlider("Shake Intensity", 0, 2, 0, nil)
@@ -3492,7 +3496,7 @@ AimAssist:CreateToggle("Require Sword Equipped", false, nil)
 AimAssist:CreateToggle("Track Through Walls", true, nil)
 AimAssist:CreateToggle("Face Target", false,nil)
 
-Velocity = Combat:CreateButton("Velocity", nil, true)
+Velocity = Combat:CreateButton("Velocity", nil, true, true)
 Velocity:CreateSlider("Horizontal", 0, 100, 100, nil)
 Velocity:CreateSlider("Velocity", 0, 100, 100, nil)
 Velocity:CreateSlider("Left Knockback", 0, 100, 100, nil)
@@ -3512,7 +3516,7 @@ AutoClicker:CreateToggle("Block Placement", true, nil)
 AutoClicker:CreateToggle("Sword Swings", true, nil)
 AutoClicker:CreateToggle("Shop Purchasing", true, nil)
 
-Reach = Combat:CreateButton("Reach", nil, true)
+Reach = Combat:CreateButton("Reach", nil, true,  true)
 Reach:CreateToggle("Sword", true, nil)
 Reach:CreateToggle("Placing", true, nil)
 Reach:CreateToggle("Mining", true, nil)
@@ -3525,7 +3529,7 @@ Reach:CreateSlider("Placing Reach", 1, 100, 14.8, function(val)
 
 end, 0.25)
 
-BowLock = Combat:CreateButton("Bow Lock", nil, true)
+BowLock = Combat:CreateButton("Bow Lock", nil, true, true)
 BowLock:CreateSlider("Smoothness", 0, 1, 0.25)
 BowLock:CreateSlider("FOV", 1, 1000, 300)
 
@@ -3818,6 +3822,8 @@ Speed = Movement:CreateButton("Speed", nil, true)
 Speed:CreateSlider("Speed", 1, 75, 23, function(value)
 	chosenSpeed = value
 end, 0.25)
+
+Speed:CreateToggle("Speed Booster", true, nil)
 
 Fly = Movement:CreateButton("Fly", nil, true)
 Fly:CreateSlider("Fly Speed", 1, 100, 50)
@@ -5213,6 +5219,7 @@ AimAssist.Callbacks.OnToggle = function(state)
 
 			shakeIntensity = AimAssist.Values["Shake Intensity"]
 			shakeSpeed = AimAssist.Values["Shake Speed"]
+			
 			currentTime = os.clock() * shakeSpeed
 
 			offsetX = math.noise(currentTime, 0, 0) * shakeIntensity
@@ -8865,48 +8872,64 @@ end
 speedThread = nil
 
 Speed.Callbacks.OnToggle = function(value)
-
-	if speedThread then
-		task.cancel(speedThread)
-		speedThread = nil
-	end
-
 	loops["speed"] = value
+
+	-- Clean up the old loop if it exists
+	if speedConnection then
+		speedConnection:Disconnect()
+		speedConnection = nil
+	end
 
 	if loops["speed"] then
 
-		speedThread = task.spawn(function()
+		speedConnection = RunService.Heartbeat:Connect(function(deltaTime)
+			local humanoid = cachedHumanoid
+			local hrp = cachedChar and cachedChar:FindFirstChild("HumanoidRootPart")
 
-			while loops["speed"] do
+			if humanoid and hrp and humanoid.Health > 0 then
 
-				local humanoid = cachedHumanoid
+				local targetSpeed
 
-				if humanoid and humanoid.Health > 0 then
+				-- 1. Base Target Speed Calculation
+				if zephyrStacks >= 1 or cachedChar:GetAttribute("SpeedBoost") == 1.5 then
+					targetSpeed = 34
+				else
+					targetSpeed = tonumber(Speed.Values["Speed"]) or 20
+				end
 
-					local newSpeed
+				-- 2. The "Speed Booster" Logic
+				-- Pulses +1 speed without yielding or breaking the Heartbeat loop
+				if Speed.Values["Speed Booster"] then
+					-- Creates a 1.5-second repeating cycle
+					local timeInCycle = os.clock() % 1.5 
 
-					if zephyrStacks >= 1 or cachedChar:GetAttribute("SpeedBoost") == 1.5 then
-						newSpeed = 34
-					else
-						newSpeed = tonumber(Speed.Values["Speed"]) or 20
-					end
-
-					if humanoid.WalkSpeed ~= newSpeed then
-						humanoid.WalkSpeed = newSpeed
+					-- For the first 0.5 seconds of the cycle, add +1 speed
+					if timeInCycle < 0.5 then
+						targetSpeed = targetSpeed + 1
 					end
 				end
 
-				task.wait(0.1)
-			end
+				-- 3. The Hybrid Speed Application (Prevents Lag Backs)
+				if targetSpeed <= 20 then
+					humanoid.WalkSpeed = targetSpeed
+				else
+					humanoid.WalkSpeed = 20 
 
+					if humanoid.MoveDirection.Magnitude > 0 then
+						local extraSpeed = targetSpeed - 20 
+						local displacement = humanoid.MoveDirection * (extraSpeed * deltaTime)
+
+						hrp.CFrame = hrp.CFrame + displacement
+					end
+				end
+
+			end
 		end)
 
 	else
-
-		local humanoid = cachedHumanoid
-
-		if humanoid then
-			humanoid.WalkSpeed = 20
+		-- Reset back to standard game speed when toggled off
+		if cachedHumanoid then
+			cachedHumanoid.WalkSpeed = 20
 		end
 	end
 end
@@ -10218,7 +10241,7 @@ end
 	if not hrp then return end
 
 	-- Lift the player off the ground slightly to prevent floor friction bugs
-	hrp.CFrame = hrp.CFrame + Vector3.new(0, 2, 0)
+	hrp.CFrame = hrp.CFrame + Vector3.new(0, 0.1, 0)
 	hum:ChangeState(Enum.HumanoidStateType.Freefall)
 
 	bodyVelocity = Instance.new("BodyVelocity")
