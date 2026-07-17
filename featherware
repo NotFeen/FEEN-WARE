@@ -1396,7 +1396,7 @@ local DRAG_SMOOTHNESS = 0.2
 local topZIndex = 10
 local currentlyDragging = nil 
 
-kitAbilitiesGUI = Player.PlayerGui.ActionBarScreenGui
+kitAbilitiesGUI = Player.PlayerGui:WaitForChild("ActionBarScreenGui")
 
 ProjectileTargeting = workspace:WaitForChild("ProjectileTargeting")
 
