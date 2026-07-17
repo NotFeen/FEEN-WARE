@@ -1,6 +1,6 @@
 repeat
 	task.wait()
-until Player.PlayerGui and Player.Character
+until game.Players.LocalPlayer.PlayerGui and game.Players.LocalPlayer.Character
 
 bootstrapCode = [[
     loadstring(game:HttpGet("https://raw.githubusercontent.com/NotFeen/FEEN-WARE/refs/heads/main/featherware"))()
