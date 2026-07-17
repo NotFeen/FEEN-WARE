@@ -3820,6 +3820,8 @@ Speed:CreateSlider("Speed", 1, 75, 23, function(value)
 end, 0.25)
 
 Fly = Movement:CreateButton("Fly", nil, true)
+Fly:CreateSlider("Fly Speed", 1, 100, 50)
+Fly:CreateSlider("Bypass Interval", 0, 5, 1.5, nil, 0.25)
 
 InfJump = Movement:CreateButton("Infinite Jump", nil, false)
 InfJump:CreateToggle("Bypass Jump Limits", true, nil)
@@ -10187,23 +10189,23 @@ AutoClicker.Callbacks.OnToggle = function (state)
 end
 
 
-flyConnection = nil
-bodyVelocity = nil
+ flyConnection = nil
+ bodyVelocity = nil
 
 -- Configuration
-FLY_UP_SPEED = 50    -- How fast you go up/down
-BYPASS_INTERVAL = 1.5   -- How often to trigger the anticheat bypass (in seconds)
+ FLY_UP_SPEED = Fly.Values["Fly Speed"]   -- How fast you go up/down
+ BYPASS_INTERVAL = Fly.Values["Bypass Interval"]   -- How often to trigger the anticheat bypass (in seconds)
 
-lastBypassTime = os.clock()
-isBypassing = false
+ lastBypassTime = os.clock()
+ isBypassing = false
 
 -- Helper to safely get character elements
-local function getCharacterData()
-	char = Player.Character
+ function getCharacterData()
+	 char = cachedChar
 	if not char then return nil end
 
-	hrp = char:FindFirstChild("HumanoidRootPart")
-	hum = char:FindFirstChildOfClass("Humanoid")
+	 hrp = cachedHRP
+	 hum = cachedHumanoid
 
 	if hrp and hum and hum.Health > 0 then
 		return char, hrp, hum
@@ -10211,9 +10213,13 @@ local function getCharacterData()
 	return nil
 end
 
-local function startFlying()
-	_, hrp, _ = getCharacterData()
+ function startFlying()
+	 char, hrp, hum = getCharacterData()
 	if not hrp then return end
+
+	-- Lift the player off the ground slightly to prevent floor friction bugs
+	hrp.CFrame = hrp.CFrame + Vector3.new(0, 2, 0)
+	hum:ChangeState(Enum.HumanoidStateType.Freefall)
 
 	bodyVelocity = Instance.new("BodyVelocity")
 	bodyVelocity.Name = "VerticalFlyForce"
@@ -10227,9 +10233,14 @@ local function startFlying()
 	lastBypassTime = os.clock()
 	isBypassing = false
 
+	-- Setup Raycast parameters for the ground check
+	 rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = {char}
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
 	-- Connect to frame updates
 	flyConnection = RunService.Heartbeat:Connect(function()
-		_, currentHrp, currentHum = getCharacterData()
+		 currentChar, currentHrp, currentHum = getCharacterData()
 
 		-- Auto-clean if player dies or despawns
 		if not currentHrp or not currentHum then
@@ -10242,39 +10253,50 @@ local function startFlying()
 			bodyVelocity.Parent = currentHrp
 		end
 
-		-- 1. Anti-Cheat Drop Bypass (Every 3 seconds)
+		-- 1. Anti-Cheat Drop Bypass (Every 1.5 seconds)
 		if os.clock() - lastBypassTime >= BYPASS_INTERVAL and not isBypassing then
-			isBypassing = true
-			task.spawn(function()
-				-- Shoot downward rapidly to trigger a "fall" state on the server
-				bodyVelocity.Velocity = Vector3.new(0, -35, 0)
-				task.wait(0.03) -- Fall for 120ms
 
-				-- Pull back up to your original height
-				bodyVelocity.Velocity = Vector3.new(0, 45, 0)
-				task.wait(0.05) -- Pull up for 100ms
+			-- RAYCAST: Check distance to the ground
+			 rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
+			 distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
 
-				-- Resume normal hover
-				bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+			-- Only drop if we are high enough in the air (prevents ground flinging)
+			if distToGround > 4 then
+				isBypassing = true
+				task.spawn(function()
+					-- Shoot downward rapidly to trigger a "fall" state on the server
+					bodyVelocity.Velocity = Vector3.new(0, -35, 0)
+					task.wait(0.03) -- Fall for 30ms
+
+					-- Pull back up to your original height
+					bodyVelocity.Velocity = Vector3.new(0, 45, 0)
+					task.wait(0.05) -- Pull up for 50ms
+
+					-- Resume normal hover
+					bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+					lastBypassTime = os.clock()
+					isBypassing = false
+				end)
+			else
+				-- If we are too close to the ground, just reset the timer and skip the drop
 				lastBypassTime = os.clock()
-				isBypassing = false
-			end)
+			end
 		end
 
 		-- 2. Handle Fly Inputs (Only when not bypassing)
 		if not isBypassing then
-			targetYVelocity = 0
+			 targetYVelocity = 0
 
-			isTyping = isGPE
+			-- Correctly check if the user is typing in chat/UI
+			 isTyping = UserInputService:GetFocusedTextBox() ~= nil
 
 			if not isTyping then
 				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
 					targetYVelocity = FLY_UP_SPEED
 				end
-			end
-
-			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-				targetYVelocity = -FLY_UP_SPEED
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+					targetYVelocity = -FLY_UP_SPEED
+				end
 			end
 
 			bodyVelocity.Velocity = Vector3.new(0, targetYVelocity, 0)
