@@ -1,4 +1,4 @@
-local bootstrapCode = [[
+bootstrapCode = [[
     loadstring(game:HttpGet("https://raw.githubusercontent.com/NotFeen/FEEN-WARE/refs/heads/main/featherware"))()
 ]]
 
