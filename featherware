@@ -8904,7 +8904,7 @@ Speed.Callbacks.OnToggle = function(value)
 					local timeInCycle = os.clock() % 1.5 
 
 					-- For the first 0.5 seconds of the cycle, add +1 speed
-					if timeInCycle < 0.5 then
+					if timeInCycle < 1.25 then
 						targetSpeed = targetSpeed + 1
 					end
 				end
