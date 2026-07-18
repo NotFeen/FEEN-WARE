@@ -882,7 +882,9 @@ loops = {
 	["bow lock"] = false,
 	["infinite crystal"] = false,
 	["fly"] = false,
-	["set settings"] = false
+	["set settings"] = false,
+	["animation switch"] = false,
+	["headless"] = false
 }
 
 --REMOTE EVENTS/FUNCTIONS--
@@ -1028,7 +1030,8 @@ phaseParts = {}
 
 emoteOptions = {}
 seen = {}
-local isGPE = false
+ isGPE = false
+local disableCurrentAnimations
 
 
 armorTiers = {"emerald", "diamond", "iron", "leather"}
@@ -2923,6 +2926,28 @@ closeOverlayBtn.MouseButton1Click:Connect(function()
 	mainScroll.Visible = true
 end)
 
+ animConnection = nil
+local function disableCurrentAnimations(char)
+	if not char then return end
+
+	-- 1. Disable the Animate script FIRST so it stops generating new tracks
+	local animate = char:FindFirstChild("Animate")
+	if animate then
+		animate.Disabled = true
+	end
+
+	-- 2. NOW stop the tracks on the client
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if animator then
+		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+			track:Stop(0)
+		end
+	end
+end
+
 function NotificationSystem.Notify(title, text, duration)
 	local cfg = NotificationSystem.Settings
 
@@ -3422,6 +3447,9 @@ FW.SettingsOverlay:CreateToggle("Notifications", true, function(val)
 	NotificationSystem.Settings.Enabled = val
 end)
 
+FW.SettingsOverlay:CreateToggle("Auto Execute", true, nil)
+
+
 Combat = FW:CreateCategory("Combat")
 Visuals = FW:CreateCategory("Visuals")
 Utility = FW:CreateCategory("Utility")
@@ -3851,6 +3879,7 @@ end)
 
 LongJump = Movement:CreateButton("LongJump", nil, true)
 LongJump:CreateToggle("Fireball Jump", nil, false)
+LongJump:CreateToggle("Auto UnToggle", nil, false)
 
 
 --Game
@@ -3964,6 +3993,58 @@ local args = {
 	}
 }
 game:GetService("ReplicatedStorage"):WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@rbxts"):WaitForChild("net"):WaitForChild("out"):WaitForChild("_NetManaged"):WaitForChild("SetSettings"):FireServer(unpack(args))
+
+disableCurrentAnimations = function(char)
+	if not char then return end
+	local animate = char:FindFirstChild("Animate")
+	if animate then
+		animate.Disabled = true
+	end
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	local animator = hum:FindFirstChildOfClass("Animator")
+	if animator then
+		for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+			track:Stop(0)
+		end
+	end
+end
+
+
+AnimationSwitch = GameTab:CreateButton("Animation Switch", nil, true)
+
+AnimationSwitch:CreateToggle("Disable Animations", function(state)
+	loops["animation switch"] = state
+	if state then
+		disableCurrentAnimations(cachedChar)
+		if cachedHumanoid then
+			animConnection = cachedHumanoid.AnimationPlayed:Connect(function(track)
+				track:Stop(0)
+			end)
+		end
+	else
+		if cachedChar and cachedChar:FindFirstChild("Animate") then
+			cachedChar.Animate.Disabled = false
+		end
+		if animConnection then
+			animConnection:Disconnect()
+			animConnection = nil
+		end
+	end
+end, false)
+
+Headless = GameTab:CreateButton("Headless", nil, true)
+Headless:CreateSlider("Transparency", 0, 1,1, function(state)
+	if cachedChar and loops["headless"] then
+		local head = cachedChar:FindFirstChild("Head")
+		if head then
+			if head:IsA("BasePart") then
+				head.Transparency = state
+			end
+		end
+	end
+end, 0.05)
+
 
 --Kits
 
@@ -8874,7 +8955,6 @@ speedThread = nil
 Speed.Callbacks.OnToggle = function(value)
 	loops["speed"] = value
 
-	-- Clean up the old loop if it exists
 	if speedConnection then
 		speedConnection:Disconnect()
 		speedConnection = nil
@@ -8883,6 +8963,7 @@ Speed.Callbacks.OnToggle = function(value)
 	if loops["speed"] then
 
 		speedConnection = RunService.Heartbeat:Connect(function(deltaTime)
+			if not mainScreenUI or mainScreenUI:GetAttribute("Running") == true then return end
 			local humanoid = cachedHumanoid
 			local hrp = cachedChar and cachedChar:FindFirstChild("HumanoidRootPart")
 
@@ -8890,26 +8971,20 @@ Speed.Callbacks.OnToggle = function(value)
 
 				local targetSpeed
 
-				-- 1. Base Target Speed Calculation
 				if zephyrStacks >= 1 or cachedChar:GetAttribute("SpeedBoost") == 1.5 then
 					targetSpeed = 34
 				else
 					targetSpeed = tonumber(Speed.Values["Speed"]) or 20
 				end
 
-				-- 2. The "Speed Booster" Logic
-				-- Pulses +1 speed without yielding or breaking the Heartbeat loop
 				if Speed.Values["Speed Booster"] then
-					-- Creates a 1.5-second repeating cycle
 					local timeInCycle = os.clock() % 1.5 
 
-					-- For the first 0.5 seconds of the cycle, add +1 speed
 					if timeInCycle < 1.25 then
 						targetSpeed = targetSpeed + 1
 					end
 				end
 
-				-- 3. The Hybrid Speed Application (Prevents Lag Backs)
 				if targetSpeed <= 20 then
 					humanoid.WalkSpeed = targetSpeed
 				else
@@ -8927,7 +9002,6 @@ Speed.Callbacks.OnToggle = function(value)
 		end)
 
 	else
-		-- Reset back to standard game speed when toggled off
 		if cachedHumanoid then
 			cachedHumanoid.WalkSpeed = 20
 		end
@@ -9224,7 +9298,7 @@ NoVoid.Callbacks.OnToggle = function(state)
 		noVoid.Anchored = true
 		noVoid.CanCollide = true
 		noVoid.Position = Vector3.new(0,-2.5,0)
-		noVoid.Size = Vector3.new(3000, 2.5, 3000)
+		noVoid.Size = Vector3.new(3000000, 2.5, 3000000)
 		noVoid.Transparency = NoVoid.Values["Transparency"]
 		noVoid.Material = Enum.Material.Neon
 		noVoid.AssemblyLinearVelocity = Vector3.new(0, 195, 0)
@@ -9288,16 +9362,40 @@ end
 
 
 Player.CharacterAdded:Connect(function(character)
+
 	character.ChildAdded:Connect(function(child)
 		if loops["sword skin changer"] then
 			task.wait(0.1) 
 			applySkin(character, child)
 		end
 	end)
-
 	for _, child in ipairs(character:GetChildren()) do
 		if loops["sword skin changer"] then
 			applySkin(character, child)
+		end
+	end
+
+	if loops["headless"] then
+		if character then
+			if character:FindFirstChild("Head") then
+				character.Head.Transparency = Headless.Values["Transparency"]
+			end
+		end
+	end
+	task.wait(0.5) 
+	if loops["animation switch"] then
+		disableCurrentAnimations(character)
+
+		if animConnection then
+			animConnection:Disconnect()
+			animConnection = nil
+		end
+
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			animConnection = hum.AnimationPlayed:Connect(function(track)
+				track:Stop(0)
+			end)
 		end
 	end
 end)
@@ -9457,6 +9555,12 @@ LongJump.Callbacks.OnToggle = function(state)
 									if oldItemInst then
 										restoreArgs = {{ hand = oldItemInst }}
 										netManaged:WaitForChild("SetInvItem"):InvokeServer(unpack(restoreArgs))
+										
+										
+									end
+									
+									if LongJump.Values["Auto UnToggle"] then
+										LongJump:SetState(false)
 									end
 								end
 							end
@@ -9484,6 +9588,7 @@ LongJump.Callbacks.OnToggle = function(state)
 					)
 					task.wait(0.01)
 				end
+				
 			end
 		end)
 	else
@@ -9868,7 +9973,7 @@ HitFix.Callbacks.OnToggled = function(state)
 	end
 end
 
-ProximityController.createProximityPrompt = function(self, p2)
+--[[ProximityController.createProximityPrompt = function(self, p2)
 	if loops["interaction expander"] == true and canRequire then
 		p2.HoldDuration = InteractionExpander.Values["Hold Duration"]
 		p2.MaxActivationDistance = InteractionExpander.Values["Distance"] 
@@ -9876,7 +9981,7 @@ ProximityController.createProximityPrompt = function(self, p2)
 
 		return oldCreate(self, p2)
 	end
-end
+--end]]
 
 previewFolder = workspace:WaitForChild("ProjectileTargeting") 
 
@@ -10277,7 +10382,7 @@ end
 		end
 
 		-- 1. Anti-Cheat Drop Bypass (Every 1.5 seconds)
-		if os.clock() - lastBypassTime >= BYPASS_INTERVAL and not isBypassing then
+		if os.clock() - lastBypassTime >= Fly.Values["Bypass Interval"] and not isBypassing then
 
 			-- RAYCAST: Check distance to the ground
 			 rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
@@ -10315,10 +10420,10 @@ end
 
 			if not isTyping then
 				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-					targetYVelocity = FLY_UP_SPEED
+					targetYVelocity = Fly.Values["Fly Speed"]
 				end
 				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-					targetYVelocity = -FLY_UP_SPEED
+					targetYVelocity = -Fly.Values["Fly Speed"]
 				end
 			end
 
@@ -10352,9 +10457,29 @@ end
 Player.OnTeleport:Connect(function(teleportState)
 	if teleportState == Enum.TeleportState.InProgress then
 
-		if mainScreenUI and mainScreenUI:GetAttribute("Running") == true then
+		if mainScreenUI and mainScreenUI:GetAttribute("Running") == true and FW.SettingsOverlay.Values["Auto Execute"] == true then
 
 			queue_on_teleport(bootstrapCode)
 		end 
 	end
 end)
+
+Headless.Callbacks.OnToggle = function(state)
+	loops["headless"] = state
+	
+	if loops["headless"] then
+		if cachedChar then
+			head = cachedChar:FindFirstChild("Head")
+			if head then
+				head.Transparency = Headless.Values["Transparency"]
+			end
+		end
+	else
+		if cachedChar then
+			head = cachedChar:FindFirstChild("Head")
+			if head then
+				head.Transparency = 0
+			end
+		end
+	end
+end
