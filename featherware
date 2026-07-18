@@ -4015,20 +4015,35 @@ AnimationSwitch = GameTab:CreateButton("Animation Switch", nil, true)
 
 AnimationSwitch:CreateToggle("Disable Animations", function(state)
 	loops["animation switch"] = state
-	if state then
+
+	if loops["animation switch"] then
+		-- 1. Disable the Animate script so it stops trying to queue new animations
+		if cachedChar and cachedChar:FindFirstChild("Animate") then
+			cachedChar.Animate.Disabled = true
+		end
+
+		-- 2. Stop currently playing animations
 		disableCurrentAnimations(cachedChar)
+
+		-- 3. Catch and stop any rogue animations (like tool animations)
 		if cachedHumanoid then
 			animConnection = cachedHumanoid.AnimationPlayed:Connect(function(track)
 				track:Stop(0)
 			end)
 		end
+
 	else
-		if cachedChar and cachedChar:FindFirstChild("Animate") then
-			cachedChar.Animate.Disabled = false
-		end
+		-- 1. Disconnect the blocker first so new animations are allowed
 		if animConnection then
 			animConnection:Disconnect()
 			animConnection = nil
+		end
+
+		-- 2. "Reboot" the Animate script to force it to recognize the current state
+		if cachedChar and cachedChar:FindFirstChild("Animate") then
+			cachedChar.Animate.Disabled = true
+			task.wait() -- A brief yield is required for the engine to register the restart
+			cachedChar.Animate.Disabled = false
 		end
 	end
 end, false)
