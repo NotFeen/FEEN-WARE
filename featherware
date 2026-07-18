@@ -1030,7 +1030,7 @@ phaseParts = {}
 
 emoteOptions = {}
 seen = {}
- isGPE = false
+isGPE = false
 local disableCurrentAnimations
 
 
@@ -2926,11 +2926,10 @@ closeOverlayBtn.MouseButton1Click:Connect(function()
 	mainScroll.Visible = true
 end)
 
- animConnection = nil
+animConnection = nil
 local function disableCurrentAnimations(char)
 	if not char then return end
 
-	-- 1. Disable the Animate script FIRST so it stops generating new tracks
 	local animate = char:FindFirstChild("Animate")
 	if animate then
 		animate.Disabled = true
@@ -3213,7 +3212,7 @@ function FW:CreateCategory(name)
 		nameLabel.TextSize = 22
 
 		-- 3. Upgraded CLOSET Button
-		
+
 		local closetDecision = ClosetButton == true
 		local closetBtn
 
@@ -4017,34 +4016,31 @@ AnimationSwitch:CreateToggle("Disable Animations", function(state)
 	loops["animation switch"] = state
 
 	if loops["animation switch"] then
-		-- 1. Disable the Animate script so it stops trying to queue new animations
-		if cachedChar and cachedChar:FindFirstChild("Animate") then
-			cachedChar.Animate.Disabled = true
-		end
+		disableCurrentAnimations(character)
 
-		-- 2. Stop currently playing animations
-		disableCurrentAnimations(cachedChar)
-
-		-- 3. Catch and stop any rogue animations (like tool animations)
-		if cachedHumanoid then
-			animConnection = cachedHumanoid.AnimationPlayed:Connect(function(track)
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			animConnection = hum.AnimationPlayed:Connect(function(track)
 				track:Stop(0)
 			end)
 		end
 
 	else
-		-- 1. Disconnect the blocker first so new animations are allowed
 		if animConnection then
 			animConnection:Disconnect()
 			animConnection = nil
 		end
 
-		-- 2. "Reboot" the Animate script to force it to recognize the current state
-		if cachedChar and cachedChar:FindFirstChild("Animate") then
-			cachedChar.Animate.Disabled = true
-			task.wait() -- A brief yield is required for the engine to register the restart
-			cachedChar.Animate.Disabled = false
+
+		if cachedHumanoid then
+			local animator = cachedHumanoid:FindFirstChild("Animator")
+			if animator then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					track:Play() -- Use :Play(), not :Start()
+				end
+			end
 		end
+
 	end
 end, false)
 
@@ -5315,7 +5311,7 @@ AimAssist.Callbacks.OnToggle = function(state)
 
 			shakeIntensity = AimAssist.Values["Shake Intensity"]
 			shakeSpeed = AimAssist.Values["Shake Speed"]
-			
+
 			currentTime = os.clock() * shakeSpeed
 
 			offsetX = math.noise(currentTime, 0, 0) * shakeIntensity
@@ -8966,6 +8962,7 @@ AutoLani.Callbacks.OnToggle = function(state)
 end
 
 speedThread = nil
+speedConnection = nil
 
 Speed.Callbacks.OnToggle = function(value)
 	loops["speed"] = value
@@ -8978,11 +8975,12 @@ Speed.Callbacks.OnToggle = function(value)
 	if loops["speed"] then
 
 		speedConnection = RunService.Heartbeat:Connect(function(deltaTime)
-			if not mainScreenUI or mainScreenUI:GetAttribute("Running") == true then return end
+			if not mainScreenUI or mainScreenUI:GetAttribute("Running") == false then return end
 			local humanoid = cachedHumanoid
 			local hrp = cachedChar and cachedChar:FindFirstChild("HumanoidRootPart")
 
 			if humanoid and hrp and humanoid.Health > 0 then
+
 
 				local targetSpeed
 
@@ -9001,6 +8999,7 @@ Speed.Callbacks.OnToggle = function(value)
 				end
 
 				if targetSpeed <= 20 then
+
 					humanoid.WalkSpeed = targetSpeed
 				else
 					humanoid.WalkSpeed = 20 
@@ -9010,6 +9009,7 @@ Speed.Callbacks.OnToggle = function(value)
 						local displacement = humanoid.MoveDirection * (extraSpeed * deltaTime)
 
 						hrp.CFrame = hrp.CFrame + displacement
+
 					end
 				end
 
@@ -9397,7 +9397,7 @@ Player.CharacterAdded:Connect(function(character)
 			end
 		end
 	end
-	task.wait(0.5) 
+	
 	if loops["animation switch"] then
 		disableCurrentAnimations(character)
 
@@ -9570,10 +9570,10 @@ LongJump.Callbacks.OnToggle = function(state)
 									if oldItemInst then
 										restoreArgs = {{ hand = oldItemInst }}
 										netManaged:WaitForChild("SetInvItem"):InvokeServer(unpack(restoreArgs))
-										
-										
+
+
 									end
-									
+
 									if LongJump.Values["Auto UnToggle"] then
 										LongJump:SetState(false)
 									end
@@ -9603,7 +9603,7 @@ LongJump.Callbacks.OnToggle = function(state)
 					)
 					task.wait(0.01)
 				end
-				
+
 			end
 		end)
 	else
@@ -10332,23 +10332,23 @@ AutoClicker.Callbacks.OnToggle = function (state)
 end
 
 
- flyConnection = nil
- bodyVelocity = nil
+flyConnection = nil
+bodyVelocity = nil
 
 -- Configuration
- FLY_UP_SPEED = Fly.Values["Fly Speed"]   -- How fast you go up/down
- BYPASS_INTERVAL = Fly.Values["Bypass Interval"]   -- How often to trigger the anticheat bypass (in seconds)
+FLY_UP_SPEED = Fly.Values["Fly Speed"]   -- How fast you go up/down
+BYPASS_INTERVAL = Fly.Values["Bypass Interval"]   -- How often to trigger the anticheat bypass (in seconds)
 
- lastBypassTime = os.clock()
- isBypassing = false
+lastBypassTime = os.clock()
+isBypassing = false
 
 -- Helper to safely get character elements
- function getCharacterData()
-	 char = cachedChar
+function getCharacterData()
+	char = cachedChar
 	if not char then return nil end
 
-	 hrp = cachedHRP
-	 hum = cachedHumanoid
+	hrp = cachedHRP
+	hum = cachedHumanoid
 
 	if hrp and hum and hum.Health > 0 then
 		return char, hrp, hum
@@ -10356,8 +10356,8 @@ end
 	return nil
 end
 
- function startFlying()
-	 char, hrp, hum = getCharacterData()
+function startFlying()
+	char, hrp, hum = getCharacterData()
 	if not hrp then return end
 
 	-- Lift the player off the ground slightly to prevent floor friction bugs
@@ -10377,13 +10377,13 @@ end
 	isBypassing = false
 
 	-- Setup Raycast parameters for the ground check
-	 rayParams = RaycastParams.new()
+	rayParams = RaycastParams.new()
 	rayParams.FilterDescendantsInstances = {char}
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
 	-- Connect to frame updates
 	flyConnection = RunService.Heartbeat:Connect(function()
-		 currentChar, currentHrp, currentHum = getCharacterData()
+		currentChar, currentHrp, currentHum = getCharacterData()
 
 		-- Auto-clean if player dies or despawns
 		if not currentHrp or not currentHum then
@@ -10400,8 +10400,8 @@ end
 		if os.clock() - lastBypassTime >= Fly.Values["Bypass Interval"] and not isBypassing then
 
 			-- RAYCAST: Check distance to the ground
-			 rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
-			 distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
+			rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
+			distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
 
 			if distToGround > 4 then
 				isBypassing = true
@@ -10437,10 +10437,10 @@ end
 
 		-- 2. Handle Fly Inputs (Only when not bypassing)
 		if not isBypassing then
-			 targetYVelocity = 0
+			targetYVelocity = 0
 
 			-- Correctly check if the user is typing in chat/UI
-			 isTyping = UserInputService:GetFocusedTextBox() ~= nil
+			isTyping = UserInputService:GetFocusedTextBox() ~= nil
 
 			if not isTyping then
 				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
@@ -10490,7 +10490,7 @@ end)
 
 Headless.Callbacks.OnToggle = function(state)
 	loops["headless"] = state
-	
+
 	if loops["headless"] then
 		if cachedChar then
 			head = cachedChar:FindFirstChild("Head")
@@ -10507,3 +10507,10 @@ Headless.Callbacks.OnToggle = function(state)
 		end
 	end
 end
+
+Player.CharacterAdded:Connect(function(characterr)
+	head = characterr:WaitForChild("Head")
+	if head and loops["headless"] then
+		head.Transparency = Headless.Values["Transparency"]
+	end
+end)
