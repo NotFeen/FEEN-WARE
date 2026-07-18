@@ -889,6 +889,7 @@ loops = {
 	["nuker"] = false
 }
 
+
 --REMOTE EVENTS/FUNCTIONS--
 easyGamesNode = nil
 KnitClient = nil
@@ -1063,6 +1064,13 @@ WeaponSpeeds = {
 claws = {"summoner_claw_1", "summoner_claw_2", "summoner_claw_3", "summoner_claw_4"}
 
 beds = {}
+teslas = {}
+hives = {}
+lucky_blocks = {}
+iron_ores = {}
+
+
+
 
 telepearlSpeed = 125
 
@@ -3994,6 +4002,10 @@ end)
 
 Nuker = GameTab:CreateButton("Nuker", nil, true)
 Nuker:CreateSlider("Break Speed", 0.01, 1, 0.3,  nil, 0.01)
+Nuker:CreateSlider("Break Range", 1, 30, 21)
+Nuker:CreateDropdown("Break", {"bed", "tesla", "hive", "lucky_block", "iron_ore"}, "bed", nil, true)
+Nuker:CreateToggle("Mining Highlight", nil, false)
+Nuker:CreateColorPicker("Highlight Color", Color3.new(), nil)
 
 
 FastBreak = GameTab:CreateButton("Fast Break", nil, true)
@@ -7837,6 +7849,29 @@ workspace.ChildAdded:Connect(function(child)
 			end
 		end
 	end
+	
+	if child.Name == "tesla_trap" then
+		if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+			table.insert(teslas, child)
+		end
+	end
+
+	if child.Name == "beehive" then
+		if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+			table.insert(hives, child)
+		end
+	end
+
+	if child.Name == "lucky_block" then
+		if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+			table.insert(lucky_blocks, child)
+		end
+	end
+
+	if child.Name == "iron_ore_mesh_block" then
+			table.insert(iron_ores, child)
+		
+	end
 end)
 
 task.spawn(function()
@@ -9417,41 +9452,29 @@ NoVoid.Callbacks.OnToggle = function(state)
 		if workspace:FindFirstChild("noVoid") then
 			workspace.noVoid:Destroy()
 		end
-		noVoid = Instance.new("Part")
+		local noVoid = Instance.new("Part")
 		noVoid.Name = "noVoid"
 		noVoid.Anchored = true
 		noVoid.CanCollide = true
 		noVoid.Position = Vector3.new(0, -2.5, 0)
 		noVoid.Size = Vector3.new(50000, 2.5, 50000)
-		noVoid.Transparency = NoVoid.Values["Transparency"]
-		noVoid.Color = Color3.fromRGB(14, 6, 25) 
+
+		noVoid.Transparency = NoVoid.Values["Transparency"] 
+
+		noVoid.Color = Color3.fromRGB(45, 0, 90) 
 		noVoid.Material = Enum.Material.ForceField 
 		noVoid.AssemblyLinearVelocity = Vector3.new(0, 195, 0)
 		noVoid.Parent = workspace
 
-		barrier = Instance.new("Part")
-		barrier.Name = "noVoidBarrier"
-		barrier.Anchored = true
-		barrier.CanCollide = false
-		barrier.CanQuery = false
-		barrier.Size = Vector3.new(noVoid.Size.X, 0.15, noVoid.Size.Z)
-		barrier.CFrame = noVoid.CFrame * CFrame.new(0, noVoid.Size.Y / 2 + 0.1, 0)
-		barrier.Material = Enum.Material.Neon
-		barrier.Color = Color3.fromRGB(180, 90, 255)
-		barrier.Transparency = 0.5
-		barrier.Parent = noVoid
+		highlight = Instance.new("Highlight")
+		highlight.Name = "FuturisticGlow"
+		highlight.Adornee = noVoid
+		highlight.FillColor = Color3.fromRGB(20, 0, 40) 
+		highlight.FillTransparency = 0.65 
+		highlight.OutlineColor = Color3.fromRGB(0, 255, 255) 
+		highlight.OutlineTransparency = 0.1
+		highlight.Parent = noVoid
 
-		light = Instance.new("PointLight")
-		light.Color = barrier.Color
-		light.Range = 60
-		light.Brightness = 4
-		light.Parent = barrier
-
-		TweenService:Create(
-			barrier,
-			TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-			{ Transparency = 0.85 }
-		):Play()
 
 		density = 0.7
 		friction = 0.3
@@ -10666,11 +10689,66 @@ for i, child in pairs(game.Workspace:GetDescendants()) do
 				table.insert(beds, child)
 			end
 		end
+		
+		if child.Name == "tesla_trap" then
+			if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+				table.insert(teslas, child)
+			end
+		end
+		
+		if child.Name == "beehive" then
+			if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+				table.insert(hives, child)
+			end
+		end
+		
+		if child.Name == "lucky_block" then
+			if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+				table.insert(lucky_blocks, child)
+			end
+		end
+		
+		if child.Name == "iron_ore_mesh_block" then
+			table.insert(iron_ores, child)
+		end
 	end
 end
 
 local NukerConnection = nil
 lastBreakTime = 0
+local currentHighlight = nil
+
+targetMap = {
+	["bed"] = beds,
+	["tesla"] = teslas,
+	["hive"] = hives,
+	["lucky_block"] = lucky_blocks,
+	["iron_ore"] = iron_ores
+}
+
+function updateHighlight(target)
+	if not Nuker.Values["Mining Highlight"] or not target then
+		if currentHighlight then
+			currentHighlight.Adornee = nil
+		end
+		return
+	end
+
+	if not currentHighlight or currentHighlight.Parent == nil then
+		currentHighlight = Instance.new("SelectionBox")
+		currentHighlight.Name = "NukerVisual"
+		currentHighlight.Color3 = Nuker.Values["Highlight Color"] or Color3.new(0.333333, 0, 0)  
+		currentHighlight.LineThickness = 0.04
+
+		currentHighlight.SurfaceColor3 = Color3.fromRGB(255, 0, 0) 
+		currentHighlight.SurfaceTransparency = 0.75 
+
+		currentHighlight.Parent = workspace
+	end
+
+	currentHighlight.Adornee = target
+end
+
 
 Nuker.Callbacks.OnToggle = function(state)
 	loops["nuker"] = state
@@ -10678,6 +10756,7 @@ Nuker.Callbacks.OnToggle = function(state)
 	if NukerConnection then
 		NukerConnection:Disconnect()
 		NukerConnection = nil
+		updateHighlight(nil) -- Clear highlight on toggle off
 	end
 
 	if loops["nuker"] then
@@ -10687,44 +10766,69 @@ Nuker.Callbacks.OnToggle = function(state)
 					NukerConnection:Disconnect()
 					NukerConnection = nil
 				end
+				updateHighlight(nil)
 				return
 			end
 
-			if not cachedChar or not cachedChar:FindFirstChild("HumanoidRootPart") then return end
+			if not cachedChar or not cachedChar:FindFirstChild("HumanoidRootPart") then 
+				updateHighlight(nil)
+				return 
+			end
 
-			currentTime = os.clock()
-			breakSpeed = Nuker.Values["Break Speed"] or 0.30
-			if currentTime - lastBreakTime < breakSpeed then return end
+			local hrp = cachedChar.HumanoidRootPart
+			local nearestTarget = nil
+			local shortestDistance = Nuker.Values["Break Range"] or 21
+			local breakSettings = Nuker.Values["Break"]
 
-			hrp = cachedChar.HumanoidRootPart
-			nearestBed = nil
-			shortestDistance = 21 
+			-- 1. Find the nearest valid block based on your UI dropdown selections
+			for targetName, targetGroup in pairs(targetMap) do
+				local isEnabled = false
 
-			for _, bed in ipairs(beds) do
-				if bed and bed.Parent then
-					local distance = (hrp.Position - bed.Position).Magnitude
+				-- Robust UI table parser supporting multiple library formats
+				if type(breakSettings) == "table" then
+					if breakSettings[targetName] == true or table.find(breakSettings, targetName) then
+						isEnabled = true
+					elseif breakSettings[targetName] and (breakSettings[targetName].Value == true or breakSettings[targetName].State == true) then
+						isEnabled = true
+					end
+				end
 
-					if distance < shortestDistance then
-						shortestDistance = distance
-						nearestBed = bed
+				if isEnabled then
+					for _, block in ipairs(targetGroup) do
+						if block and block.Parent then
+							local distance = (hrp.Position - block.Position).Magnitude
+
+							if distance < shortestDistance then
+								shortestDistance = distance
+								nearestTarget = block
+							end
+						end
 					end
 				end
 			end
 
-			if nearestBed then
+			-- 2. Update the visual highlight status
+			updateHighlight(nearestTarget)
+
+			-- 3. Handle the attack timer and server remote invocation
+			local currentTime = os.clock()
+			local breakSpeed = Nuker.Values["Break Speed"] or 0.30
+			if currentTime - lastBreakTime < breakSpeed then return end
+
+			if nearestTarget then
 				lastBreakTime = currentTime
 
-				bedPos = nearestBed.Position
-				args = {
+				local targetPos = nearestTarget.Position
+				local args = {
 					{
 						blockRef = {
 							blockPosition = Vector3.new(
-								math.round(bedPos.X / 3), 
-								math.round(bedPos.Y / 3), 
-								math.round(bedPos.Z / 3)
+								math.round(targetPos.X / 3), 
+								math.round(targetPos.Y / 3), 
+								math.round(targetPos.Z / 3)
 							)
 						},
-						hitPosition = bedPos,
+						hitPosition = targetPos,
 						hitNormal = Vector3.new(0, 1, 0)
 					}
 				}
