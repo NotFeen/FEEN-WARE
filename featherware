@@ -10403,17 +10403,27 @@ end
 			 rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
 			 distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
 
-			-- Only drop if we are high enough in the air (prevents ground flinging)
 			if distToGround > 4 then
 				isBypassing = true
 				task.spawn(function()
-					-- Shoot downward rapidly to trigger a "fall" state on the server
+					-- Initial check just in case
+					if not bodyVelocity then return end
+
 					bodyVelocity.Velocity = Vector3.new(0, -35, 0)
 					task.wait(0.03) -- Fall for 30ms
 
-					-- Pull back up to your original height
+					if not bodyVelocity then 
+						isBypassing = false
+						return 
+					end
+
 					bodyVelocity.Velocity = Vector3.new(0, 45, 0)
 					task.wait(0.05) -- Pull up for 50ms
+
+					if not bodyVelocity then 
+						isBypassing = false
+						return 
+					end
 
 					-- Resume normal hover
 					bodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -10421,7 +10431,6 @@ end
 					isBypassing = false
 				end)
 			else
-				-- If we are too close to the ground, just reset the timer and skip the drop
 				lastBypassTime = os.clock()
 			end
 		end
