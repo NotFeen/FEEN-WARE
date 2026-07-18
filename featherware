@@ -884,7 +884,8 @@ loops = {
 	["fly"] = false,
 	["set settings"] = false,
 	["animation switch"] = false,
-	["headless"] = false
+	["headless"] = false,
+	["night"] = false,
 }
 
 --REMOTE EVENTS/FUNCTIONS--
@@ -1924,6 +1925,55 @@ local function injectElements(mod, settingsCont, uniquePrefix)
 				end
 			end
 		end)
+	end
+	
+	function mod:CreateButton(btnName, callback, toggleable)
+		local button = {
+			Toggled = false
+		}
+
+		local btn = Instance.new("TextButton")
+		btn.Parent = settingsCont
+		btn.Size = UDim2.new(1,0,0,28)
+		btn.BackgroundTransparency = 1
+		btn.Text = "      - " .. btnName
+		btn.TextColor3 = Color3.fromRGB(180,180,180)
+		btn.TextSize = 20
+		btn.FontFace = Font.fromName(textFont)
+		btn.TextXAlignment = Enum.TextXAlignment.Left
+
+		local function update()
+			btn.TextColor3 = button.Toggled
+				and Color3.fromRGB(78,173,73)
+				or Color3.fromRGB(180,180,180)
+		end
+
+		function button:SetState(state)
+			if self.Toggled == state then
+				return
+			end
+
+			self.Toggled = state
+			update()
+
+			if callback then
+				callback(state)
+			end
+		end
+
+		btn.MouseButton1Click:Connect(function()
+			if toggleable then
+				button:SetState(not button.Toggled)
+			else
+				if callback then
+					callback()
+				end
+			end
+		end)
+
+		update()
+
+		return button
 	end
 
 	function mod:CreateLabel(text)
@@ -3043,6 +3093,31 @@ function NotificationSystem.Notify(title, text, duration)
 	end)
 end
 
+local function UninjectFW()
+	saveConfigToPC()
+
+	if mainScreenUI then
+		mainScreenUI:SetAttribute("Running", false)
+	end
+
+	local bedESP = workspace:FindFirstChild("BedESP")
+	if bedESP then
+		bedESP:Destroy()
+	end
+
+	if notificationsGui then
+		notificationsGui:Destroy()
+	end
+
+	if mainScreenUI then
+		mainScreenUI:Destroy()
+	end
+
+	if FW and FW.Destroy then
+		FW:Destroy()
+	end
+end
+
 FW.SettingsOverlay = {
 	Values = {},
 	Callbacks = {}
@@ -3447,6 +3522,20 @@ FW.SettingsOverlay:CreateToggle("Notifications", true, function(val)
 end)
 
 FW.SettingsOverlay:CreateToggle("Auto Execute", true, nil)
+Uninject = FW.SettingsOverlay:CreateButton("Uninject", function(state)
+	if state then
+		Uninject:SetState(false)
+		UninjectFW()
+	end
+end, true)
+
+Reinject = FW.SettingsOverlay:CreateButton("Reinject", function(state)
+	if state then
+	Reinject:SetState(false)
+	UninjectFW()
+	loadstring(bootstrapCode)()
+	end
+end, true)
 
 
 Combat = FW:CreateCategory("Combat")
@@ -3901,9 +3990,12 @@ end)
 
 
 Nuker = GameTab:CreateButton("Nuker", nil, true)
+Nuker:CreateSlider("Break Speed", 0.01, 1, 0.3,  nil, 0.01)
+
 
 FastBreak = GameTab:CreateButton("Fast Break", nil, true)
 FastBreak:CreateSlider("Break Speed", 0.01, 1, 0.3, nil, 0.01)
+FastBreak:CreateToggle("Only On Beds", nil, false)
 
 PingExtender = GameTab:CreateButton("Ping Extender", nil, true)
 PingExtender:CreateSlider("Cooldown", 0, 2, 0.05, function(value)
@@ -4055,6 +4147,8 @@ Headless:CreateSlider("Transparency", 0, 1,1, function(state)
 		end
 	end
 end, 0.05)
+
+Night = GameTab:CreateButton("Night", nil, true)
 
 
 --Kits
@@ -7086,6 +7180,12 @@ FastBreak.Callbacks.OnToggle = function(state)
 				if target.Parent and target.Parent:FindFirstChildOfClass("Humanoid") then
 					continue
 				end
+				
+				if FastBreak.Values["Only On Beds"] then
+					if target.Name ~= "Bed" and target.Name ~= "bed" then
+						continue
+					end
+				end
 
 
 				local holdingMiningTool = false
@@ -7131,6 +7231,8 @@ FastBreak.Callbacks.OnToggle = function(state)
 							hitNormal = Vector3.new(0,1,0)
 						}
 					}
+					
+					
 
 					pcall(function()
 						DamageBlock:InvokeServer(unpack(args))
@@ -9306,18 +9408,17 @@ NoVoid.Callbacks.OnToggle = function(state)
 		if workspace:FindFirstChild("noVoid") then
 			workspace.noVoid:Destroy()
 		end
-
-		local noVoid = Instance.new("Part")
-		noVoid.Parent = workspace
+		 noVoid = Instance.new("Part")
 		noVoid.Name = "noVoid"
 		noVoid.Anchored = true
 		noVoid.CanCollide = true
-		noVoid.Position = Vector3.new(0,-2.5,0)
-		noVoid.Size = Vector3.new(3000000, 2.5, 3000000)
+		noVoid.Position = Vector3.new(0, -2.5, 0)
+		noVoid.Size = Vector3.new(50000, 2.5, 50000)
 		noVoid.Transparency = NoVoid.Values["Transparency"]
-		noVoid.Material = Enum.Material.Neon
+		noVoid.Color = Color3.fromRGB(35, 15, 60) 
+		noVoid.Material = Enum.Material.ForceField 
 		noVoid.AssemblyLinearVelocity = Vector3.new(0, 195, 0)
-		noVoid.BrickColor = BrickColor.new("Eggplant")
+		noVoid.Parent = workspace
 
 		density = 0.7
 		friction = 0.3
@@ -10514,3 +10615,13 @@ Player.CharacterAdded:Connect(function(characterr)
 		head.Transparency = Headless.Values["Transparency"]
 	end
 end)
+
+Night.Callbacks.OnToggle = function(state)
+	loops["night"] = state
+	
+	if loops["night"] then
+		game.Lighting.ClockTime = 20
+	else
+		game.Lighting.ClockTime = 14
+	end
+end
