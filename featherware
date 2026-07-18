@@ -886,6 +886,7 @@ loops = {
 	["animation switch"] = false,
 	["headless"] = false,
 	["night"] = false,
+	["nuker"] = false
 }
 
 --REMOTE EVENTS/FUNCTIONS--
@@ -1061,11 +1062,13 @@ WeaponSpeeds = {
 }
 claws = {"summoner_claw_1", "summoner_claw_2", "summoner_claw_3", "summoner_claw_4"}
 
+beds = {}
+
 telepearlSpeed = 125
 
 WeaponStats = {
 	["wood_bow"] = { Charge = 0.5, Cooldown = 0.5 },
-	["wood_crossbow"] = { Charge = 0.2, Cooldown = 0.8 },
+	["wood_crossbow"] = { Charge = 0.2, Cooldown = 1 },
 	["mage_spellbook"] = { Charge = 0.0, Cooldown = 0.11 },
 	["whim_spellbook"] = { Charge = 0.0, Cooldown = 0.15 },
 	["frost_staff_1"] = { Charge = 0.1, Cooldown = 0.3 }
@@ -1205,7 +1208,7 @@ NotificationSystem.Settings = {
 	FadeTween = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 }
 
-local function getAllProjectiles()
+ function getAllProjectiles()
 	projectiles = {}
 
 	fallbackList = {
@@ -1281,17 +1284,17 @@ local function getAllProjectiles()
 	return projectiles
 end
 
-local VALID_PROJECTILES = getAllProjectiles()
+ VALID_PROJECTILES = getAllProjectiles()
 
 local FW = {}
 
 
 
 --Animation IDs
-local HH_HOLD_ANIMATION_ID = "rbxassetid://13421339706"
-local HH_SHOOT_ANIMATION_ID = "rbxassetid://13421344632"
-local BOW_HOLD_ANIMATION_ID = "rbxassetid://15222797648"
-local BOW_SHOOT_ANIMATION_ID = "rbxassetid://8860294521"
+ HH_HOLD_ANIMATION_ID = "rbxassetid://13421339706"
+ HH_SHOOT_ANIMATION_ID = "rbxassetid://13421344632"
+ BOW_HOLD_ANIMATION_ID = "rbxassetid://15222797648"
+ BOW_SHOOT_ANIMATION_ID = "rbxassetid://8860294521"
 local CB_HOLD_ANIMATION_ID = "rbxassetid://8860301164"
 local CB_SHOOT_ANIMATION_ID = "rbxassetid://8860304406"
 local KAIDA_HIT_ANIMATION_ID = "rbxassetid://18964634583"
@@ -5655,7 +5658,7 @@ local function isPathClear(origin, targetPos, ignoreList)
 end
 
 local function getFiringSolution(origin, targetStartPos, targetVelocity, projectileSpeed)
-	gravity = workspace.Gravity
+	gravity = 35
 	predictedPos = targetStartPos
 	timeOfFlight = 0
 	angle = 0
@@ -5733,15 +5736,13 @@ local function fireProjectile(projectileName, HRP, targetPart, itemRequired, tar
 	flightTime = 0
 	aimVector = Vector3.zero
 
-	-- NEW MATH IMPLEMENTATION
 	if speed < 9999 then
 		local velocity = targetPart.AssemblyLinearVelocity or Vector3.zero
 
-		-- Call the gravity-compensating function
 		local calculatedAim, calcPos, calcTime = getFiringSolution(origin, targetPart.Position, velocity, speed)
 
 		if not calculatedAim then
-			return false -- Target is completely out of range, abort shot
+			return false 
 		end
 
 		aimVector = calculatedAim
@@ -7828,6 +7829,14 @@ workspace.ChildAdded:Connect(function(child)
 			child.Transparency = 0
 		end
 	end
+	
+	if child:IsA("BasePart") then
+		if child.Name == "bed" then
+			if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+				table.insert(beds, child)
+			end
+		end
+	end
 end)
 
 task.spawn(function()
@@ -9408,17 +9417,41 @@ NoVoid.Callbacks.OnToggle = function(state)
 		if workspace:FindFirstChild("noVoid") then
 			workspace.noVoid:Destroy()
 		end
-		 noVoid = Instance.new("Part")
+		noVoid = Instance.new("Part")
 		noVoid.Name = "noVoid"
 		noVoid.Anchored = true
 		noVoid.CanCollide = true
 		noVoid.Position = Vector3.new(0, -2.5, 0)
 		noVoid.Size = Vector3.new(50000, 2.5, 50000)
 		noVoid.Transparency = NoVoid.Values["Transparency"]
-		noVoid.Color = Color3.fromRGB(35, 15, 60) 
+		noVoid.Color = Color3.fromRGB(14, 6, 25) 
 		noVoid.Material = Enum.Material.ForceField 
 		noVoid.AssemblyLinearVelocity = Vector3.new(0, 195, 0)
 		noVoid.Parent = workspace
+
+		barrier = Instance.new("Part")
+		barrier.Name = "noVoidBarrier"
+		barrier.Anchored = true
+		barrier.CanCollide = false
+		barrier.CanQuery = false
+		barrier.Size = Vector3.new(noVoid.Size.X, 0.15, noVoid.Size.Z)
+		barrier.CFrame = noVoid.CFrame * CFrame.new(0, noVoid.Size.Y / 2 + 0.1, 0)
+		barrier.Material = Enum.Material.Neon
+		barrier.Color = Color3.fromRGB(180, 90, 255)
+		barrier.Transparency = 0.5
+		barrier.Parent = noVoid
+
+		light = Instance.new("PointLight")
+		light.Color = barrier.Color
+		light.Range = 60
+		light.Brightness = 4
+		light.Parent = barrier
+
+		TweenService:Create(
+			barrier,
+			TweenInfo.new(2.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+			{ Transparency = 0.85 }
+		):Play()
 
 		density = 0.7
 		friction = 0.3
@@ -10623,5 +10656,80 @@ Night.Callbacks.OnToggle = function(state)
 		game.Lighting.ClockTime = 20
 	else
 		game.Lighting.ClockTime = 14
+	end
+end
+
+for i, child in pairs(game.Workspace:GetDescendants()) do
+	if child:IsA("BasePart") then
+		if child.Name == "bed" then
+			if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
+				table.insert(beds, child)
+			end
+		end
+	end
+end
+
+local NukerConnection = nil
+lastBreakTime = 0
+
+Nuker.Callbacks.OnToggle = function(state)
+	loops["nuker"] = state
+
+	if NukerConnection then
+		NukerConnection:Disconnect()
+		NukerConnection = nil
+	end
+
+	if loops["nuker"] then
+		NukerConnection = RunService.Heartbeat:Connect(function()
+			if not loops["nuker"] then
+				if NukerConnection then
+					NukerConnection:Disconnect()
+					NukerConnection = nil
+				end
+				return
+			end
+
+			if not cachedChar or not cachedChar:FindFirstChild("HumanoidRootPart") then return end
+
+			currentTime = os.clock()
+			breakSpeed = Nuker.Values["Break Speed"] or 0.30
+			if currentTime - lastBreakTime < breakSpeed then return end
+
+			hrp = cachedChar.HumanoidRootPart
+			nearestBed = nil
+			shortestDistance = 21 
+
+			for _, bed in ipairs(beds) do
+				if bed and bed.Parent then
+					local distance = (hrp.Position - bed.Position).Magnitude
+
+					if distance < shortestDistance then
+						shortestDistance = distance
+						nearestBed = bed
+					end
+				end
+			end
+
+			if nearestBed then
+				lastBreakTime = currentTime
+
+				bedPos = nearestBed.Position
+				args = {
+					{
+						blockRef = {
+							blockPosition = Vector3.new(
+								math.round(bedPos.X / 3), 
+								math.round(bedPos.Y / 3), 
+								math.round(bedPos.Z / 3)
+							)
+						},
+						hitPosition = bedPos,
+						hitNormal = Vector3.new(0, 1, 0)
+					}
+				}
+				DamageBlock:InvokeServer(unpack(args))
+			end
+		end)
 	end
 end
