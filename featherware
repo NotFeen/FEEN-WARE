@@ -887,9 +887,10 @@
 		["headless"] = false,
 		["night"] = false,
 		["nuker"] = false,
-		["bed alarm"] = false
-	}
-
+		["bed alarm"] = false,
+		["fov"] = false
+		}
+ 
 
 	--REMOTE EVENTS/FUNCTIONS--
 	easyGamesNode = nil
@@ -948,24 +949,25 @@
 	if canRequire then
 		easyGamesNode = replicatedStorage:WaitForChild("rbxts_include"):WaitForChild("node_modules"):WaitForChild("@easy-games")
 		KnitClient = require(easyGamesNode:WaitForChild("knit"):WaitForChild("src")).KnitClient
+		RuntimeLib = require(replicatedStorage.rbxts_include.RuntimeLib)
 		sword_controller = KnitClient.Controllers.SwordController
 		shared_constants = require(game:GetService("ReplicatedStorage").TS["shared-constants"])
 		metaModule = replicatedStorage:WaitForChild("TS"):WaitForChild("item"):WaitForChild("item-meta")
 		remotes = require(replicatedStorage:WaitForChild("TS"):WaitForChild("remotes")).default
 		BlockDisguiseController = KnitClient.Controllers.BlockDisguiseController
 		MimicController = KnitClient.Controllers.MimicController
-		CombatConstantModule = replicatedStorage:WaitForChild("TS"):WaitForChild("combat"):WaitForChild("combat-constant")
+		CombatConstant = require(replicatedStorage.TS.combat["combat-constant"]).CombatConstant
 		originalUndisguise = BlockDisguiseController.undisguisePlayer
-		CombatData = require(CombatConstantModule)
 		ShopModule = require(replicatedStorage.TS.games.bedwars.shop["bedwars-shop"])
 		bedwarsShop = ShopModule.BedwarsShop 
 		ProximityController = KnitClient.Controllers.ProximityPromptController
 		oldCreate = ProximityController.createProximityPrompt
 		originalIsClickingTooFast = sword_controller.isClickingTooFast
 		BlockSelectorModule = require(replicatedStorage.rbxts_include.node_modules["@easy-games"]["block-engine"].out.client.select["block-selector"])
-		setreadonly(BlockSelectorModule, false)
-		setreadonly(BlockSelectorModule.BlockSelector, false)
-		oldGetMouseInfo = BlockSelectorModule.BlockSelector.getMouseInfo
+		BlockSelector = BlockSelectorModule.BlockSelector
+		BlockSelectorMode = BlockSelectorModule.BlockSelectorMode
+		originalGetMouseInfo = BlockSelector.getMouseInfo
+
 	end
 
 	if DamageBlock then
@@ -975,8 +977,6 @@
 	--FOLDERS
 	inventoriesFolder = replicatedStorage:WaitForChild("Inventories")
 	itemsFolder = replicatedStorage:WaitForChild("Items")
-
-
 	--PLAYER
 
 	Players = game:GetService("Players")
@@ -3482,8 +3482,12 @@
 			end)
 
 			arrow.MouseButton1Click:Connect(function()
+				if #settingsCont:GetChildren() == 1 then
+					NotificationSystem.Notify("Settings", "None are available sorry!", 1)
+				else
 				settingsCont.Visible = not settingsCont.Visible
 				arrow.Rotation = settingsCont.Visible and 90 or 0
+				end
 			end)
 
 			if closetBtn then
@@ -3647,18 +3651,15 @@
 	AutoClicker:CreateToggle("Sword Swings", true, nil)
 	AutoClicker:CreateToggle("Shop Purchasing", true, nil)
 
-	Reach = Combat:CreateButton("Reach", nil, true,  true)
+	Reach = Combat:CreateButton("Reach", nil, true, true)
 	Reach:CreateToggle("Sword", true, nil)
 	Reach:CreateToggle("Placing", true, nil)
 	Reach:CreateToggle("Mining", true, nil)
 	Reach:CreateSlider("Sword Reach", 1, 28, 14.8, function(val)
-	end, 0.25)
-	Reach:CreateSlider("Mining Reach", 1, 100, 14.8, function(val)
 
 	end, 0.25)
-	Reach:CreateSlider("Placing Reach", 1, 100, 14.8, function(val)
-
-	end, 0.25)
+	Reach:CreateSlider("Placing Reach", 1, 60, 18, nil,  0.25)
+	Reach:CreateSlider("Mining Reach", 1, 30, 18, nil,0.25)
 
 	BowLock = Combat:CreateButton("Bow Lock", nil, true, true)
 	BowLock:CreateSlider("Smoothness", 0, 1, 0.25)
@@ -4125,6 +4126,14 @@
 	end, 0.05)
 
 	Night = GameTab:CreateButton("Night", nil, true)
+	Fov = GameTab:CreateButton("Fov", nil, true)
+	Fov:CreateSlider("Amount", 1, 120, 90, function(state)
+		if loops["fov"] then
+			if workspace:FindFirstChild("Camera") then
+				workspace.CurrentCamera.FieldOfView = state
+			end
+		end
+	end)
 
 
 	--Kits
@@ -4306,25 +4315,40 @@
 
 
 
-	Reach.Callbacks.OnToggle = function(state)
-		loops["reach"] = state
+Reach.Callbacks.OnToggle = function(state)
+	loops["reach"] = state
 
-		if state then
-			if Reach.Values["Sword"] == true then
-			end
-
-			if Reach.Values["Mining"] == true then
-
-			end
-
-			if Reach.Values["Placing"] == true then
-
-			end
+	if loops["reach"] then
+		-- Sword
+		if Reach.Values["Sword"] == true then
+			CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
+			CombatConstant.REGION_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
 		end
 
-		if not state then
+		-- Placing & Mining
+		if canRequire and BlockSelector then
+			BlockSelector.getMouseInfo = function(self, mode, options)
+				options = options or {}
+				if mode == BlockSelectorMode.PLACE and Reach.Values["Placing"] then
+					options.range = Reach.Values["Placing Reach"]
+				end
+				if mode == BlockSelectorMode.SELECT and Reach.Values["Mining"] then
+					options.range = Reach.Values["Mining Reach"]
+				end
+				return originalGetMouseInfo(self, mode, options)
+			end
 		end
 	end
+
+	if not loops["reach"] then
+		CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = 14.4
+		CombatConstant.REGION_SWORD_CHARACTER_DISTANCE = 12.6
+
+		if canRequire and BlockSelector and originalGetMouseInfo then
+			BlockSelector.getMouseInfo = originalGetMouseInfo
+		end
+	end
+end
 
 	LeaveParty.Callbacks.OnToggle = function(state)
 
@@ -9151,7 +9175,7 @@
 	AutoClicker.Callbacks.OnToggle = function(state)
 		loops["auto clicker"] = state 
 
-		if state then
+		if loops["auto clicker"] then
 			if autoClickerThread then task.cancel(autoClickerThread) end
 
 			autoClickerThread = task.spawn(function()
@@ -9162,12 +9186,6 @@
 					local char = Player.Character
 					local hum = char and char:FindFirstChild("Humanoid")
 
-					if AutoClicker.Values["Require Mouse Held"] then
-						if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-							continue
-						end
-					end
-
 					if hum and hum.Health > 0 then
 						if mouse and mouse.Target then
 							if char:FindFirstChild("HandInvItem") then
@@ -9175,9 +9193,9 @@
 								if HandInvItem.Value then
 									local ItemName = HandInvItem.Value.Name
 
-									if AutoClicker.Values["Sword Swings"] then
+									if AutoClicker.Values["Block Placement"] then
 										if table.find(swords, ItemName) then
-
+											
 										end
 									end
 								end
@@ -9629,9 +9647,6 @@
 	LongJump.Callbacks.OnToggle = function(state)
 		loops["long jump"] = state
 
-		if loops["long jump"] == false then
-			workspace.Gravity = 196.2
-		end
 
 		if state then
 			task.spawn(function()
@@ -9647,8 +9662,8 @@
 						:WaitForChild("out")
 						:WaitForChild("_NetManaged")
 
-					local GLIDE_SPEED = 48
-					local UPWARD_LIFT = 12
+					local GLIDE_SPEED = 75
+					local UPWARD_LIFT = 7
 
 					if not originalGravity then
 						originalGravity = workspace.Gravity
@@ -9708,7 +9723,6 @@
 						end
 					end
 
-					workspace.Gravity = 35
 					localRootPart.CFrame = localRootPart.CFrame + Vector3.new(0, 3, 0)
 
 					if not activePushForce or not activePushForce.Parent then
@@ -9735,12 +9749,6 @@
 			if activePushForce then
 				activePushForce:Destroy()
 				activePushForce = nil
-			end
-
-			if originalGravity then
-				workspace.Gravity = originalGravity
-			else
-				workspace.Gravity = 196.2
 			end
 
 			character = Players.LocalPlayer.Character
@@ -10393,7 +10401,6 @@
 
 	BowLock.Callbacks.OnToggled = function(state)
 		loops["bow lock"] = state
-		-- Instantly stop tracking if the user disables the toggle while actively aiming
 		if not state then
 			stopTracking()
 		end
@@ -10408,8 +10415,8 @@
 	bodyVelocity = nil
 
 	-- Configuration
-	FLY_UP_SPEED = Fly.Values["Fly Speed"]   -- How fast you go up/down
-	BYPASS_INTERVAL = Fly.Values["Bypass Interval"]   -- How often to trigger the anticheat bypass (in seconds)
+	FLY_UP_SPEED = Fly.Values["Fly Speed"] 
+	BYPASS_INTERVAL = Fly.Values["Bypass Interval"] 
 
 	lastBypassTime = os.clock()
 	isBypassing = false
@@ -10871,6 +10878,9 @@ end
 										highlight.Parent = character
 
 										activeAlarmData.activeHighlights[enemy] = highlight
+										
+										NotificationSystem.Notify("Bed Alarm", "Someone is at your base!", 0.5)
+
 									else
 										if activeAlarmData.activeHighlights[enemy].Parent ~= character then
 											activeAlarmData.activeHighlights[enemy].Parent = character
@@ -10968,6 +10978,16 @@ AnimationSwitch.Callbacks.OnToggle = function(state)
 		animAnimator = cachedChar:FindFirstChild("Animate")
 		if animAnimator then
 			animAnimator.Enabled = true
+		end
+	end
+end
+
+Fov.Callbacks.OnToggle = function(state)
+	loops["fov"] = state
+	
+	if loops["fov"] then
+		if workspace:FindFirstChild("Camera") then
+			workspace.CurrentCamera.FieldOfView = math.round(Fov.Values["Amount"])
 		end
 	end
 end
