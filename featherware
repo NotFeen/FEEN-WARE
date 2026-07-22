@@ -888,7 +888,9 @@
 		["night"] = false,
 		["nuker"] = false,
 		["bed alarm"] = false,
-		["fov"] = false
+		["fov"] = false,
+		["sprint"] = false,
+		["trigger bot"] = false
 		}
  
 
@@ -967,7 +969,12 @@
 		BlockSelector = BlockSelectorModule.BlockSelector
 		BlockSelectorMode = BlockSelectorModule.BlockSelectorMode
 		originalGetMouseInfo = BlockSelector.getMouseInfo
-
+		BlockPlacementController = KnitClient.Controllers.BlockPlacementController
+		blockPlacer = BlockPlacementController and BlockPlacementController.blockPlace
+		SprintConstants = require(replicatedStorage.TS.sprint["sprint-constants"]).SprintConstants
+		SprintController = KnitClient.Controllers.SprintController
+		origStopSprinting = SprintController.stopSprinting 
+ 
 	end
 
 	if DamageBlock then
@@ -1690,9 +1697,201 @@
 
 		end
 	end
+	
+desync = {
+	on = false, conn = nil, marker = nil,
+	queue = {},
+	hrp = nil, dummy = nil, instant = nil, frozen = nil,
+	phase = "off", accum = 0, frames = 0, vy = 0, grounded = true,
+	lastReal = false,
+}
 
-	local function injectElements(mod, settingsCont, uniquePrefix)
-		-- ADD THIS LINE HERE:
+function getHRP()
+	c = Player.Character
+	return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+function makeMarker(cf)
+	p = Instance.new("Part")
+	p.Name = "Desync_OldRoot"; p.Size = Vector3.new(2,2,1)
+	p.Color = Color3.fromRGB(0,120,255); p.Material = Enum.Material.Neon
+	p.Transparency = 0.5; p.Anchored = true
+	p.CanCollide = false; p.CanQuery = false; p.CanTouch = false
+	p.CFrame = cf; p.Parent = workspace.CurrentCamera
+	bg = Instance.new("BillboardGui")
+	bg.AlwaysOnTop = true; bg.Size = UDim2.fromOffset(190,24)
+	bg.StudsOffset = Vector3.new(0,2.5,0); bg.Adornee = p
+	tl = Instance.new("TextLabel")
+	tl.BackgroundTransparency = 1; tl.Size = UDim2.fromScale(1,1)
+	tl.Text = "OLD ROOTPART"; tl.TextColor3 = Color3.fromRGB(140,190,255)
+	tl.TextStrokeTransparency = 0; tl.TextScaled = true; tl.Parent = bg
+	bg.Parent = p
+	return p
+end
+
+-- GHOST (default): movement untouched, box is just your screen
+function stepGhost()
+	hrp = getHRP(); if not hrp then return end
+	delayE = Desync.Values["Delay"] or 0
+	now = tick()
+	table.insert(desync.queue, { t = now, cf = hrp.CFrame })
+	while #desync.queue > 1 and (now - desync.queue[1].t) > (delayE + 1) do table.remove(desync.queue, 1) end
+	show = Desync.Values["Show RootPart"] and delayE > 0 and #desync.queue > 1
+	if show and not desync.marker then desync.marker = makeMarker(hrp.CFrame) end
+	if (not show) and desync.marker then desync.marker:Destroy(); desync.marker = nil end
+	if not show then return end
+	targetT = now - delayE; lagCF = desync.queue[1].cf
+	for i = 1, #desync.queue do if desync.queue[i].t >= targetT then lagCF = desync.queue[i].cf break end end
+	desync.marker.CFrame = lagCF
+end
+
+-- [REAL]: others see the box (server frozen there)
+CAMERA_FOLLOW = true
+function charFilter()
+	list = {}; c = Player.Character
+	if c then table.insert(list, c) end
+	if desync.hrp    then table.insert(list, desync.hrp)    end
+	if desync.marker then table.insert(list, desync.marker) end
+	return list
+end
+function ensureDummy(char, cf)
+	if not char then return nil end
+	d = desync.dummy
+	if not d or d.Parent ~= char then
+		if d then d:Destroy() end
+		d = Instance.new("Part"); d.Name = "DesyncAnchor"; d.Size = Vector3.new(2,2,1)
+		d.Transparency = 1; d.Anchored = true; d.CanCollide = false
+		d.CanQuery = false; d.CanTouch = false; d.Massless = true; d.Parent = char
+		desync.dummy = d
+	end
+	d.CFrame = cf; return d
+end
+function clearDummy(char)
+	if desync.dummy then desync.dummy:Destroy() desync.dummy = nil end
+	hrp = desync.hrp
+	if char and hrp and hrp.Parent == char then char.PrimaryPart = hrp end
+end
+function mover(prevCF, dt, hum)
+	cam = workspace.CurrentCamera
+	lookH  = Vector3.new(cam.CFrame.LookVector.X,0,cam.CFrame.LookVector.Z)
+	rightH = Vector3.new(cam.CFrame.RightVector.X,0,cam.CFrame.RightVector.Z)
+	gOff = (hum and hum.HipHeight and hum.HipHeight > 0) and hum.HipHeight or 2
+	dir = Vector3.zero
+	if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + lookH  end
+	if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - lookH  end
+	if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - rightH end
+	if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + rightH end
+	speed = (hum and hum.WalkSpeed and hum.WalkSpeed > 0) and hum.WalkSpeed or 16
+	hMove = (dir.Magnitude > 0) and (dir.Unit * speed * dt) or Vector3.zero
+	if hMove.Magnitude > 0 then
+		rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude; rp.FilterDescendantsInstances = charFilter()
+		hit = workspace:Raycast(prevCF.Position, hMove.Unit * (hMove.Magnitude + 0.25), rp)
+		if hit and hit.Distance <= hMove.Magnitude + 0.05 then hMove = Vector3.zero end
+	end
+	vy = desync.vy
+	if UserInputService:IsKeyDown(Enum.KeyCode.Space) and desync.grounded then vy = 50 end
+	vy = vy - workspace.Gravity * dt
+	base = prevCF.Position + hMove
+	rp2 = RaycastParams.new(); rp2.FilterType = Enum.RaycastFilterType.Exclude; rp2.FilterDescendantsInstances = charFilter()
+	g = workspace:Raycast(base + Vector3.new(0,12,0), Vector3.new(0,-30,0), rp2)
+	if g then
+		groundY = g.Position.Y + gOff; gravY = base.Y + vy*dt
+		if gravY <= groundY + 0.15 then newPos = Vector3.new(base.X,groundY,base.Z); vy = 0; grounded = true
+		else newPos = Vector3.new(base.X,gravY,base.Z); grounded = false end
+	else newPos = Vector3.new(base.X, base.Y + vy*dt, base.Z); grounded = false end
+	desync.vy = vy; desync.grounded = grounded
+	lh = lookH.Magnitude > 0.001 and lookH.Unit or Vector3.new(0,0,-1)
+	return CFrame.lookAt(newPos, newPos + lh)
+end
+function stepReal(dt)
+	hrp = desync.hrp; if not hrp then return end
+	char = Player.Character; hum = char and char:FindFirstChildOfClass("Humanoid")
+	delayE = Desync.Values["Delay"] or 0
+	instant = mover(desync.instant or hrp.CFrame, dt, hum); desync.instant = instant
+	want = Desync.Values["Show RootPart"] and delayE > 0
+	if want and not desync.marker then desync.marker = makeMarker(desync.frozen or instant) end
+	if (not want) and desync.marker then desync.marker:Destroy(); desync.marker = nil end
+	if delayE <= 0 then
+		if desync.phase ~= "off" and char then
+			hrp.Anchored = false; hrp.CanCollide = true
+			if hrp.Parent ~= char then hrp.Parent = char end
+			clearDummy(char)
+			if CAMERA_FOLLOW and hum then workspace.CurrentCamera.CameraSubject = hum end
+			desync.phase = "off"; desync.accum = 0; desync.vy = 0; desync.grounded = true
+		end
+		desync.instant = hrp.CFrame
+		if desync.marker then desync.marker.CFrame = hrp.CFrame end
+		return
+	end
+	if desync.phase == "off" then
+		desync.frozen = hrp.CFrame; hrp.CanCollide = false; hrp.Anchored = true
+		hrp.Parent = workspace.CurrentCamera
+		if char then d = ensureDummy(char, desync.frozen); if d then char.PrimaryPart = d end end
+		if CAMERA_FOLLOW then workspace.CurrentCamera.CameraSubject = hrp end
+		desync.phase = "frozen"; desync.accum = 0; desync.vy = 0; desync.grounded = true
+	end
+	if desync.phase == "resyncing" then
+		if desync.dummy then desync.dummy:Destroy() desync.dummy = nil end
+		if char and hrp.Parent ~= char then hrp.Anchored = false; hrp.Parent = char; char.PrimaryPart = hrp end
+		hrp.CFrame = instant; pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)
+		desync.frames = desync.frames - 1
+		if desync.frames <= 0 then
+			hrp.Anchored = true; hrp.CanCollide = false; hrp.Parent = workspace.CurrentCamera
+			if char then d = ensureDummy(char, desync.frozen); if d then char.PrimaryPart = d end end
+			if CAMERA_FOLLOW then workspace.CurrentCamera.CameraSubject = hrp end
+			desync.phase = "frozen"; desync.accum = 0
+		end
+	else
+		hrp.CFrame = instant; desync.accum = desync.accum + dt
+		if desync.accum >= delayE and char then
+			desync.frozen = instant; hrp.Anchored = false; hrp.Parent = char; char.PrimaryPart = hrp
+			hrp.CFrame = instant; desync.phase = "resyncing"; desync.frames = 3
+		end
+	end
+	if desync.marker then desync.marker.CFrame = desync.frozen end
+end
+
+function enterReal()
+	hrp = getHRP(); if not hrp then return end
+	desync.hrp = hrp; desync.instant = hrp.CFrame; desync.frozen = hrp.CFrame
+	desync.phase = "off"; desync.accum = 0; desync.vy = 0; desync.grounded = true
+	desync.queue = {}
+end
+function exitReal()
+	hrp = desync.hrp; char = Player.Character
+	hum = char and char:FindFirstChildOfClass("Humanoid")
+	if hrp and hrp.Parent == workspace.CurrentCamera and char then
+		hrp.Anchored = false; hrp.CanCollide = true; hrp.Parent = char
+	end
+	clearDummy(char)
+	if hum then workspace.CurrentCamera.CameraSubject = hum end
+	if desync.marker then desync.marker:Destroy(); desync.marker = nil end
+	desync.hrp, desync.instant, desync.frozen = nil, nil, nil; desync.phase = "off"; desync.queue = {}
+end
+function desyncFrame(dt)
+	if not desync.on then return end
+	realNow = Desync.Values["Real Desync"] == true
+	if realNow ~= desync.lastReal then
+		if realNow then enterReal() else exitReal() end
+		desync.lastReal = realNow
+	end
+	if realNow then stepReal(dt) else stepGhost() end
+end
+function startDesync()
+	if desync.on then return end
+	desync.on = true; desync.queue = {}; desync.lastReal = false
+	desync.conn = RunService.RenderStepped:Connect(desyncFrame)
+end
+function stopDesync()
+	if not desync.on then return end
+	desync.on = false
+	if desync.conn then desync.conn:Disconnect(); desync.conn = nil end
+	exitReal()
+	if desync.marker then desync.marker:Destroy(); desync.marker = nil end
+	desync.queue = {}
+end
+
+local function injectElements(mod, settingsCont, uniquePrefix)
 		mod.UpdateFunctions = mod.UpdateFunctions or {}
 
 		uniquePrefix = uniquePrefix or "Overlay"
@@ -2794,11 +2993,11 @@
 			gSlider.FocusLost:Connect(updateColor)
 			bSlider.FocusLost:Connect(updateColor)
 		end
-	end
+end
 
 	--Main CODE
 
-	local oldGui = PlayerGui:FindFirstChild("FeatherWare")
+local oldGui = PlayerGui:FindFirstChild("FeatherWare")
 	if oldGui then oldGui:SetAttribute("Running", false) task.wait(0.1) oldGui:Destroy() end
 
 	if PlayerGui:FindFirstChild("KA") then
@@ -3009,99 +3208,138 @@
 	end
 
 	function NotificationSystem.Notify(title, text, duration)
-		local cfg = NotificationSystem.Settings
+	local cfg = NotificationSystem.Settings
+	if not cfg.Enabled then return end
+	duration = duration or cfg.Lifetime
 
-		if not cfg.Enabled then return end
+	local WIDTH        = cfg.Width  or 300
+	local HEIGHT       = cfg.Height or 64
+	local RIGHT_MARGIN = 28 
+	local TOP_MARGIN   = 16
+	local GAP          = 10
+	local accent       = cfg.AccentColor or Color3.fromRGB(78, 173, 73)
+	local barColor     = Color3.fromRGB(255, 255, 255) 
 
-		duration = duration or cfg.Lifetime
+	local SLIDE_OUT = TweenInfo.new(0.40, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+	local RESTACK   = TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 
-		local frame = Instance.new("Frame")
-		frame.Size = UDim2.new(0, cfg.Width, 0, cfg.Height)
-		frame.BackgroundColor3 = cfg.BackgroundColor
-		frame.BorderSizePixel = 0
-		frame.ClipsDescendants = true -- Keeps the accent line safely inside the rounded corners
-		frame.Parent = holder
+	NotificationSystem._stack = NotificationSystem._stack or {}
+	local stack = NotificationSystem._stack
 
-		local corner = Instance.new("UICorner")
-		corner.CornerRadius = UDim.new(0, 8) -- Changed to 8 (slightly sharper, modern look)
-		corner.Parent = frame
-
-		-- NEW: Modern subtle outline (UIStroke)
-		local stroke = Instance.new("UIStroke")
-		stroke.Color = Color3.fromRGB(255, 255, 255)
-		stroke.Transparency = 0.85 -- Barely visible, gives a glassy/premium edge
-		stroke.Thickness = 1.2
-		stroke.Parent = frame
-
-		-- NEW: Subtle lighting gradient for depth
-		local gradient = Instance.new("UIGradient")
-		gradient.Rotation = 45
-		gradient.Transparency = NumberSequence.new{
-			NumberSequenceKeypoint.new(0, 0),
-			NumberSequenceKeypoint.new(1, 0.15)
-		}
-		gradient.Parent = frame
-
-		-- NEW: Colored Accent Bar on the left side
-		local accent = Instance.new("Frame")
-		accent.Size = UDim2.new(0, 4, 1, 0)
-		accent.BackgroundColor3 = cfg.TitleColor -- Automatically matches your title color
-		accent.BorderSizePixel = 0
-		accent.Parent = frame
-
-		local titleLbl = Instance.new("TextLabel")
-		titleLbl.Parent = frame
-		titleLbl.BackgroundTransparency = 1
-		titleLbl.Position = UDim2.new(0, 16, 0, 8) -- Shifted slightly to make room for the accent
-		titleLbl.Size = UDim2.new(1, -24, 0, 20)
-		titleLbl.Text = tostring(title)
-		titleLbl.TextColor3 = cfg.TitleColor
-		titleLbl.Font = Enum.Font.GothamBold
-		titleLbl.TextSize = 15 
-		titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-
-		local textLbl = Instance.new("TextLabel")
-		textLbl.Parent = frame
-		textLbl.BackgroundTransparency = 1
-		textLbl.Position = UDim2.new(0, 16, 0, 30)
-		textLbl.Size = UDim2.new(1, -24, 1, -38)
-		textLbl.Text = tostring(text)
-		textLbl.TextColor3 = cfg.TextColor
-		textLbl.Font = Enum.Font.GothamMedium -- Upgraded to Medium for better readability
-		textLbl.TextSize = 13
-		textLbl.TextWrapped = true
-		textLbl.RichText = true -- Allows you to use <b>bold</b> or colors in your notification text!
-		textLbl.TextXAlignment = Enum.TextXAlignment.Left
-		textLbl.TextYAlignment = Enum.TextYAlignment.Top -- Prevents small text from floating weirdly in the middle
-
-		frame.Position = UDim2.new(1, 400, 0, 0)
-
-		TweenService:Create(frame, cfg.SlideTween, {
-			Position = UDim2.new(0, 0, 0, 0)
-		}):Play()
-
-		task.delay(duration, function()
-			local tween = TweenService:Create(frame, cfg.FadeTween, {
-				BackgroundTransparency = 1,
-				Position = UDim2.new(1, 400, 0, 0)
-			})
-
-			tween:Play()
-
-			-- UPGRADED FADE OUT: Now smoothly fades the text, the new outline, and the accent bar!
-			for _, v in ipairs(frame:GetDescendants()) do
-				if v:IsA("TextLabel") then
-					TweenService:Create(v, cfg.FadeTween, { TextTransparency = 1 }):Play()
-				elseif v:IsA("UIStroke") then
-					TweenService:Create(v, cfg.FadeTween, { Transparency = 1 }):Play()
-				elseif v:IsA("Frame") then
-					TweenService:Create(v, cfg.FadeTween, { BackgroundTransparency = 1 }):Play()
-				end
+	local function layoutStack()
+		for i, f in ipairs(stack) do
+			if f and f.Parent then
+				local y = TOP_MARGIN + (i - 1) * (HEIGHT + GAP)
+				TweenService:Create(f, RESTACK, {
+					Position = UDim2.new(1, -RIGHT_MARGIN, 0, y),
+				}):Play()
 			end
+		end
+	end
 
-			tween.Completed:Wait()
-			frame:Destroy()
-		end)
+	local frame = Instance.new("TextButton")
+	frame.AutoButtonColor = false       
+	frame.Text = ""                  
+	frame.Size = UDim2.new(0, WIDTH, 0, HEIGHT)
+	frame.BackgroundColor3 = cfg.BackgroundColor or Color3.fromRGB(26, 26, 30)
+	frame.BorderSizePixel = 0
+	frame.ClipsDescendants = true
+	frame.AnchorPoint = Vector2.new(1, 0)
+	frame.Parent = holder
+
+	Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+	local stroke = Instance.new("UIStroke", frame)
+	stroke.Color = Color3.fromRGB(255, 255, 255)
+	stroke.Transparency = 0.9
+	stroke.Thickness = 1
+
+	local gradient = Instance.new("UIGradient", frame)
+	gradient.Rotation = 90
+	gradient.Color = ColorSequence.new(
+		Color3.fromRGB(34, 34, 40),
+		Color3.fromRGB(19, 19, 23)
+	)
+
+	local accentBar = Instance.new("Frame", frame)  
+	accentBar.Size = UDim2.new(0, 4, 1, 0)
+	accentBar.BackgroundColor3 = barColor      
+	accentBar.BorderSizePixel = 0
+	Instance.new("UICorner", accentBar).CornerRadius = UDim.new(0, 2)
+
+	local titleLbl = Instance.new("TextLabel", frame)
+	titleLbl.BackgroundTransparency = 1
+	titleLbl.Position = UDim2.new(0, 16, 0, 9)
+	titleLbl.Size = UDim2.new(1, -28, 0, 18)
+	titleLbl.Text = tostring(title)
+	titleLbl.TextColor3 = cfg.TitleColor or Color3.fromRGB(242, 242, 246)
+	titleLbl.Font = Enum.Font.GothamBold
+	titleLbl.TextSize = 14
+	titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+	titleLbl.TextYAlignment = Enum.TextYAlignment.Center
+
+	local textLbl = Instance.new("TextLabel", frame)
+	textLbl.BackgroundTransparency = 1
+	textLbl.Position = UDim2.new(0, 16, 0, 28)
+	textLbl.Size = UDim2.new(1, -28, 1, -34)
+	textLbl.Text = tostring(text)
+	textLbl.TextColor3 = cfg.TextColor or Color3.fromRGB(172, 174, 186)
+	textLbl.Font = Enum.Font.GothamMedium
+	textLbl.TextSize = 13
+	textLbl.TextWrapped = true
+	textLbl.RichText = true
+	textLbl.TextXAlignment = Enum.TextXAlignment.Left
+	textLbl.TextYAlignment = Enum.TextYAlignment.Top
+
+	local progress = Instance.new("Frame", frame)
+	progress.Size = UDim2.new(1, 0, 0, 2)
+	progress.Position = UDim2.new(0, 0, 1, -2)
+	progress.BackgroundColor3 = barColor
+	progress.BorderSizePixel = 0
+
+	table.insert(stack, frame)
+	local slotY = TOP_MARGIN + (#stack - 1) * (HEIGHT + GAP)
+	frame.Position = UDim2.new(1, WIDTH + 24, 0, slotY) 
+	layoutStack() 
+
+	local progressTween = TweenService:Create(progress,
+		TweenInfo.new(duration, Enum.EasingStyle.Linear),
+		{ Size = UDim2.new(0, 0, 0, 2) }
+	)
+	progressTween:Play()
+
+	-- ===== one dismiss routine for BOTH the timer and the click =====
+	local dismissed = false
+	local function dismiss()
+		if dismissed then return end
+		dismissed = true
+		progressTween:Cancel()
+
+		for i, f in ipairs(stack) do
+			if f == frame then table.remove(stack, i) break end
+		end
+		layoutStack()  
+
+		local exit = TweenService:Create(frame, SLIDE_OUT, {
+			Position = UDim2.new(1, WIDTH + 24, 0, frame.Position.Y.Offset),
+			BackgroundTransparency = 1,
+		})
+		exit:Play()
+		for _, v in ipairs(frame:GetDescendants()) do
+			if v:IsA("TextLabel") then
+				TweenService:Create(v, SLIDE_OUT, { TextTransparency = 1 }):Play()
+			elseif v:IsA("UIStroke") then
+				TweenService:Create(v, SLIDE_OUT, { Transparency = 1 }):Play()
+			elseif v:IsA("Frame") and v ~= frame then
+				TweenService:Create(v, SLIDE_OUT, { BackgroundTransparency = 1 }):Play()
+			end
+		end
+		exit.Completed:Wait()
+		frame:Destroy()
+	end
+
+	frame.MouseButton1Click:Connect(dismiss) 
+	task.delay(duration, dismiss)
 	end
 
 	local function UninjectFW()
@@ -3372,22 +3610,23 @@
 				tween(nameScroll, {CanvasPosition = Vector2.new(0, 0)}, 0.2)
 			end)
 
-			-- 5. Toggle State Logic
-			local function setToggleState(state)
-				if mainScreenUI:GetAttribute("Running") then
-					mod.Toggled = state
-					nameLabel.TextColor3 = state and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
-					loops[string.lower(btnName)] = state
+		local function setToggleState(state)
+			if mainScreenUI:GetAttribute("Running") then
+				mod.Toggled = state
+				nameLabel.TextColor3 = state and Color3.fromRGB(78, 173, 73) or Color3.new(1, 1, 1)
+				loops[string.lower(btnName)] = state
 
-					_G.SavedConfig[toggleID] = state
-					saveConfigToPC()
+				pcall(NotificationSystem.Notify, btnName, state and "Toggled On" or "Toggled Off", 2)
 
-					if callback then callback(state) end
-					if mod.Callbacks.OnToggle then mod.Callbacks.OnToggle(state) end
+				_G.SavedConfig[toggleID] = state
+				pcall(saveConfigToPC)
 
-					NotificationSystem.Notify(btnName, state and "Toggled On" or "Toggled Off", 2)
-				end
+				task.spawn(function()
+					if callback then pcall(callback, state) end
+					if mod.Callbacks.OnToggle then pcall(mod.Callbacks.OnToggle, state) end
+				end)
 			end
+		end
 
 			task.spawn(function()
 				if startingToggleState then
@@ -3603,7 +3842,15 @@
 	Killaura:CreateToggle("Multi Target Hit", false, nil)
 	Killaura:CreateToggle("Check If Sophia Frozen", true, nil)
 	Killaura:CreateToggle("Swing Animation", true, nil)	
-	Killaura:CreateSlider("Swing Speed", 0.01, 0.5, 0.12, nil, 0.001)
+	Killaura:CreateSlider("Swing Range", 18, 50, 20, nil, 1)
+	Killaura:CreateSlider("Swing Speed", 0.01, 0.5, 0.111, nil, 0.001)
+	Killaura:CreateToggle("Calculate Swing Speed", false, nil)
+	
+	TriggerBot = Combat:CreateButton("Trigger Bot",nil, true, true)
+	TriggerBot:CreateToggle("Target Players", true, nil)
+	TriggerBot:CreateToggle("Target NPCs/Dummies", true, nil)
+	TriggerBot:CreateSlider("CPS", 1, 9, 9, nil, 0.2)
+	
 
 	KaidaKa = Combat:CreateButton("KaidaKa",nil, true, true)
 	KaidaKa:CreateToggle("Manual Swing", false, nil)
@@ -3632,6 +3879,7 @@
 	AimAssist:CreateToggle("Face Target", false,nil)
 
 	Velocity = Combat:CreateButton("Velocity", nil, true, true)
+	Velocity:CreateSlider("Chance", 0, 100, 100, nil, 1)
 	Velocity:CreateSlider("Horizontal", 0, 100, 100, nil)
 	Velocity:CreateSlider("Velocity", 0, 100, 100, nil)
 	Velocity:CreateSlider("Left Knockback", 0, 100, 100, nil)
@@ -3646,10 +3894,13 @@
 	Velocity:CreateSlider("Bridge Vertical Knockback", 0, 100, 50, nil)
 
 	AutoClicker = Combat:CreateButton("Auto Clicker", nil, true)
-	AutoClicker:CreateSlider("CPS", 1,50,7, nil)
 	AutoClicker:CreateToggle("Block Placement", true, nil)
+	AutoClicker:CreateSlider("Block CPS", 1,200,7, nil)
 	AutoClicker:CreateToggle("Sword Swings", true, nil)
+	AutoClicker:CreateSlider("Sword CPS", 1,9,9, nil)
 	AutoClicker:CreateToggle("Shop Purchasing", true, nil)
+	AutoClicker:CreateSlider("Shop CPS", 1,50,7, nil)
+
 
 	Reach = Combat:CreateButton("Reach", nil, true, true)
 	Reach:CreateToggle("Sword", true, nil)
@@ -3658,8 +3909,19 @@
 	Reach:CreateSlider("Sword Reach", 1, 28, 14.8, function(val)
 
 	end, 0.25)
+	
+	
 	Reach:CreateSlider("Placing Reach", 1, 60, 18, nil,  0.25)
 	Reach:CreateSlider("Mining Reach", 1, 30, 18, nil,0.25)
+
+	Desync = Combat:CreateButton("Desync", nil, true)
+	Desync:CreateToggle("Show RootPart", true, nil)
+	Desync:CreateSlider("Delay", 0, 1, 0.2, nil, 0.05)
+
+	Desync.Callbacks.OnToggle = function(state)
+		loops["desync"] = state
+		if loops["desync"] then startDesync() else stopDesync() end
+	end
 
 	BowLock = Combat:CreateButton("Bow Lock", nil, true, true)
 	BowLock:CreateSlider("Smoothness", 0, 1, 0.25)
@@ -3678,9 +3940,6 @@
 	--AutoShoot:CreateSlider("Randomization", 1, 100, 50, nil)
 	AutoShoot:CreateDropdown("Projectiles", {"arrow", "snowball", "mage_spell_base", "blackhole_bomb"}, "arrow", nil, true)
 	AutoShoot:CreateSlider("Shoot duration", 0.01, 2, 0.4)
-	AutoSprint = Movement:CreateButton("Auto Sprint", nil, true)
-	AutoSprint:CreateToggle("Bypass all items")
-	AutoSprint:CreateToggle("Don't auto sprint on gloops")
 
 	HitFix = Combat:CreateButton("Hit Fix", nil, true)
 
@@ -3957,6 +4216,15 @@
 
 
 	--Movement
+	
+	Sprint = Movement:CreateButton("Sprint", nil, true)
+	Sprint:CreateSlider("FOV Multipler", 1.1, 3, 1.1, function(state)
+		if loops["sprint"] then
+			if canRequire then
+			SprintConstants.RUN_FOV_MULT = state
+			end
+		end
+	end, 0.1)
 	Speed = Movement:CreateButton("Speed", nil, true)
 	Speed:CreateSlider("Speed", 1, 75, 23, function(value)
 		chosenSpeed = value
@@ -4322,7 +4590,6 @@ Reach.Callbacks.OnToggle = function(state)
 		-- Sword
 		if Reach.Values["Sword"] == true then
 			CombatConstant.RAYCAST_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
-			CombatConstant.REGION_SWORD_CHARACTER_DISTANCE = Reach.Values["Sword Reach"]
 		end
 
 		-- Placing & Mining
@@ -4826,9 +5093,9 @@ end
 					lastTargetSearch = currentTime
 
 					local playertarget = nil
-					local playerdistance = findTargetStuds 
+					local playerdistance = math.max(findTargetStuds, tonumber(Killaura.Values["Swing Range"]) or 0)
 					local npcdummytarget = nil
-					local npcdummydistance = findTargetStuds 
+					local npcdummydistance = math.max(findTargetStuds, tonumber(Killaura.Values["Swing Range"]) or 0)	
 
 					if Killaura.Values["Target Players"] then
 						for _, v in pairs(cachedPlayers) do
@@ -4901,6 +5168,46 @@ end
 
 
 				local distance = (HRP.Position - targetHRP.Position).Magnitude
+			-- SWING ANIMATION: pure circle check on Swing Range, reuses the target the killaura already found
+			if Killaura.Values["Swing Animation"] and not Killaura.Values["Manual Swing"] then
+				local swingRange = tonumber(Killaura.Values["Swing Range"]) or 0
+				if swingRange > 0 and distance <= swingRange then
+					currentClock = os.clock()
+					local visualCooldown = nil
+					if Killaura.Values["Calculate Swing Speed"] then
+						visualCooldown = math.max(1 / 9, hitDelay)   
+					    else
+						visualCooldown = Killaura.Values["Swing Speed"]
+					end
+
+					if canRequire then
+						if currentClock - lastVisualSwing >= visualCooldown then
+							lastVisualSwing = currentClock
+							if sword_controller then
+								sword_controller:playSwordEffect({sword = {}}, false, {
+									playAnimation = true,
+									playSound = true,
+								})
+							end
+						end
+					else
+						if not loadedSwingTrack or loadedSwingTrack.Animation.Parent == nil then
+							local currentHumanoid = char:FindFirstChild("Humanoid")
+							if currentHumanoid then
+								local currentAnimator = currentHumanoid:FindFirstChildOfClass("Animator")
+								if currentAnimator then
+									loadedSwingTrack = currentAnimator:LoadAnimation(swingAnimation)
+									loadedSwingTrack.Priority = Enum.AnimationPriority.Action
+									loadedSwingTrack.Looped = false
+								end
+							end
+						end
+						if loadedSwingTrack and not loadedSwingTrack.IsPlaying then
+							loadedSwingTrack:Play()
+						end
+					end
+				end
+			end
 				local reach = tonumber(Killaura.Values["Reach"])
 				if distance > reach then
 					currentKaTarget = nil
@@ -5042,39 +5349,6 @@ end
 					end
 				end
 
-				if Killaura.Values["Swing Animation"] and not Killaura.Values["Manual Swing"] then
-					currentClock = os.clock()
-					local visualCooldown = Killaura.Values["Swing Speed"]
-
-					if canRequire then
-						if currentClock - lastVisualSwing >= visualCooldown then
-							lastVisualSwing = currentClock
-
-							if sword_controller then
-								sword_controller:playSwordEffect({sword = {}}, false, {
-									playAnimation = true,
-									playSound = true
-								})
-							end
-						end
-					else
-						if not loadedSwingTrack or loadedSwingTrack.Animation.Parent == nil then
-							local currentHumanoid = char:FindFirstChild("Humanoid")
-							if currentHumanoid then
-								local currentAnimator = currentHumanoid:FindFirstChildOfClass("Animator")
-								if currentAnimator then
-									loadedSwingTrack = currentAnimator:LoadAnimation(swingAnimation)
-									loadedSwingTrack.Priority = Enum.AnimationPriority.Action
-									loadedSwingTrack.Looped = false
-								end
-							end
-						end
-
-						if loadedSwingTrack and not loadedSwingTrack.IsPlaying then
-							loadedSwingTrack:Play()
-						end
-					end
-				end
 
 
 				local OrginalPosition  = nil
@@ -5868,7 +6142,10 @@ end
 			end
 		end
 
-		if isKnockbackHit then
+		local chance = Velocity.Values["Chance"] or 100
+		local chancePass = math.random() * 100 < chance
+
+		if isKnockbackHit and chancePass then
 			local isOnBridge = IsOnVoidOrBridge(HRP)
 
 			if isOnBridge and Velocity.Values["Take Knockback On Bridges"] == false then
@@ -7843,9 +8120,12 @@ end
 		
 		if child:IsA("BasePart") then
 			if child.Name == "bed" then
+				if child.Parent.Name ~= "MapCFrames" then
+
 				if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
 					table.insert(beds, child)
 				end
+			  end
 			end
 		end
 		
@@ -8407,6 +8687,7 @@ end
 
 
 	Player.CharacterAdded:Connect(function()
+ 
 		task.wait(0.2)
 		updateInventory()
 	end)
@@ -9171,46 +9452,18 @@ end
 	if Player.Character then
 		onCharacterAdded(Player.Character)
 	end
+	
+local blockSelector = BlockSelector and BlockSelector.new() or nil
 
-	AutoClicker.Callbacks.OnToggle = function(state)
-		loops["auto clicker"] = state 
+local function placeBlockAtCursor()
+	if not (blockSelector and blockPlacer) then return end
+	local info = blockSelector:getMouseInfo(BlockSelectorMode.PLACE)   -- your reach hook wraps this
+	if not (info and info.placementPosition == info.placementPosition) then return end  -- NaN guard
+	pcall(blockPlacer.placeBlock, blockPlacer, info.placementPosition) -- the actual place
+end
 
-		if loops["auto clicker"] then
-			if autoClickerThread then task.cancel(autoClickerThread) end
+-- ===== callback ONCE, after the button exists =====
 
-			autoClickerThread = task.spawn(function()
-				while loops["auto clicker"] do
-					task.wait(1 / AutoClicker.Values["CPS"])
-
-					local mouse = Player:GetMouse()
-					local char = Player.Character
-					local hum = char and char:FindFirstChild("Humanoid")
-
-					if hum and hum.Health > 0 then
-						if mouse and mouse.Target then
-							if char:FindFirstChild("HandInvItem") then
-								local HandInvItem = char.HandInvItem
-								if HandInvItem.Value then
-									local ItemName = HandInvItem.Value.Name
-
-									if AutoClicker.Values["Block Placement"] then
-										if table.find(swords, ItemName) then
-											
-										end
-									end
-								end
-							end
-						end
-					end
-				end
-			end)
-		else
-			if autoClickerThread then 
-				task.cancel(breakThread) 
-				autoClickerThread = nil
-			end
-		end
-	end
 
 	workspace.ChildAdded:Connect(function(child)
 		if loops["auto whisper"] then
@@ -10618,8 +10871,11 @@ end
 	for i, child in pairs(game.Workspace:GetDescendants()) do
 		if child:IsA("BasePart") then
 			if child.Name == "bed" then
+			if child.Parent.Name ~= "MapCFrames" then
+
 				if child:GetAttribute("TeamId") ~= Player:GetAttribute("Team") then
 					table.insert(beds, child)
+				end
 				end
 			end
 			
@@ -10800,8 +11056,10 @@ end
 	function findPlayerBed()
 		for _, child in pairs(workspace:GetDescendants()) do
 			if child.Name == "bed" then
+			if child.Parent.Name ~= "MapCFrames" then
 				if child:GetAttribute("TeamId") == Player:GetAttribute("Team") then
 					return child
+				end
 				end
 			end
 		end
@@ -10989,5 +11247,335 @@ Fov.Callbacks.OnToggle = function(state)
 		if workspace:FindFirstChild("Camera") then
 			workspace.CurrentCamera.FieldOfView = math.round(Fov.Values["Amount"])
 		end
+	end
+end
+
+AutoClicker.Callbacks.OnToggle = function(state)
+	loops["auto clicker"] = state
+	print("auto man")
+
+	if loops["auto clicker"] then
+		if autoClickerThread then task.cancel(autoClickerThread) end
+		print("asdasd")
+
+		autoClickerThread = task.spawn(function()
+			while loops["auto clicker"] do
+				print("block")
+				local char = Player.Character
+				local hum  = char:FindFirstChild("Humanoid")
+
+				if hum and hum.Health > 0 then
+					local tool = char:FindFirstChild("HandInvItem").Value  -- held item (not HandInvItem)
+					if tool then
+						print("asdasd")
+						local isSword = table.find(swords, tool.Name)
+						print("asdaczxcxcvcxvbxcvxcv")
+						if not isSword and AutoClicker.Values["Block Placement"] then
+							print("placeec")
+							placeBlockAtCursor()              -- holding a block -> place
+						elseif isSword and AutoClicker.Values["Sword Swings"] then
+							-- sword swing later
+						end
+						-- shop purchasing later
+					end
+				end
+
+				task.wait(1 / AutoClicker.Values["CPS"])      -- wait AFTER the action
+			end
+		end)
+	else
+		if autoClickerThread then
+			task.cancel(autoClickerThread)                    -- was breakThread (the bug)
+			autoClickerThread = nil
+		end
+	end
+end
+
+Sprint.Callbacks.OnToggle = function(state)
+	loops["sprint"] = state
+	if loops["sprint"] and canRequire then
+		SprintConstants.RUN_FOV_MULT = Sprint.Values["FOV Multipler"]
+		SprintController.stopSprinting = function() end
+		SprintController.attemptingSprint = true
+		SprintController:startSprinting()
+	elseif not loops["sprint"] and canRequire then
+		SprintConstants.RUN_FOV_MULT = 1.1
+		SprintController.stopSprinting = origStopSprinting
+		SprintController:stopSprinting(true)
+	end
+end
+
+TRIGGER_RADIUS   = 3.5
+TRIGGER_MAXDIST  = 22  
+WS = game:GetService("Workspace") 
+TRIGGER_FAN_DEG = 3 
+triggerThread = nil
+
+
+function fanRay(ray)
+	cam = workspace.CurrentCamera
+	if not cam then return nil end
+	r = cam.CFrame.RightVector
+	u = cam.CFrame.UpVector
+	d = ray.Direction
+	s = math.rad(TRIGGER_FAN_DEG)
+	offs = { (d + r*s).Unit, (d - r*s).Unit, (d + u*s).Unit, (d - u*s).Unit }
+	params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	if Player.Character then params.FilterDescendantsInstances = {Player.Character} end
+	for i = 1, 4 do
+		hit = WS:Raycast(ray.Origin, offs[i] * TRIGGER_MAXDIST, params)
+		if hit then
+			mm = trigModelOf(hit.Instance)
+			if mm then return mm end
+		end
+	end
+	return nil
+end
+
+
+function trigModelOf(inst)
+	m = inst
+	while m and m ~= workspace and m ~= game do
+		if m:IsA("Model") and m ~= Player.Character then
+			h = m:FindFirstChildOfClass("Humanoid")
+			if h and h.Health > 0 then
+				tp = Players:GetPlayerFromCharacter(m)
+				if tp then
+					if TriggerBot.Values["Target Players"] and tp ~= Player and tp.Team ~= Player.Team then return m end
+				else    
+					if TriggerBot.Values["Target NPCs/Dummies"] then return m end
+				end
+				return nil
+			end
+		end
+		m = m.Parent
+	end
+	return nil
+end
+
+function getTriggerTarget()
+	if not (TriggerBot.Values["Target Players"] or TriggerBot.Values["Target NPCs/Dummies"]) then return nil end
+	mouse = Player:GetMouse()
+	ray   = mouse.UnitRay
+	model = trigModelOf(mouse.Target)  
+	if not model and Player.Character then
+		if type(WS.Spherecast) == "function" then   
+			params = RaycastParams.new()
+			params.FilterType = Enum.RaycastFilterType.Exclude
+			if Player.Character then params.FilterDescendantsInstances = {Player.Character} end
+			ok, res = pcall(WS.Spherecast, WS, ray.Origin, TRIGGER_RADIUS, ray.Direction * TRIGGER_MAXDIST, params)
+			if ok and res then model = trigModelOf(res.Instance) end
+		end
+		if not model then model = fanRay(ray) end
+	end
+	return model
+end
+
+function triggerLoop()
+	while loops["trigger bot"] do
+		if not (TriggerBot.Values["Target Players"] or TriggerBot.Values["Target NPCs/Dummies"]) then
+			task.wait(0.25)
+		else
+			char = Player.Character
+			hum  = char and char:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				hi   = char:FindFirstChild("HandInvItem")
+				held = hi and hi.Value
+				heldName = (typeof(held) == "Instance" and held.Name) or (held and tostring(held)) or nil
+				if heldName and table.find(swords, heldName) then
+					if getTriggerTarget() then
+						pcall(function() sword_controller.lastSwing = 0 end)       
+						pcall(function() sword_controller:swingSwordAtMouse(0.39) end)  
+					end
+				end
+			end
+			task.wait(1 / math.max(TriggerBot.Values["CPS"] or 9, 0.1))
+		end
+	end
+end
+
+TriggerBot.Callbacks.OnToggle = function(state)
+	loops["trigger bot"] = state
+	if state then
+		if triggerThread then task.cancel(triggerThread) end
+		triggerThread = task.spawn(triggerLoop)
+	else
+		if triggerThread then task.cancel(triggerThread); triggerThread = nil end
+	end
+end
+
+
+
+-- ===== live sword controller =====
+SwordController = require(Player.PlayerScripts.TS.controllers.global.combat.sword["sword-controller"]).SwordController
+
+autoClickerThread = nil
+acMobileHold = false
+acPlacer = nil
+acPlaceMethod = nil
+acPlaceResolved = false
+acPlacePath = nil
+acLastPlace = 0
+acPlaceDiag = false
+
+-- ===== block placer resolver (runs once; tries every known path, prints the winner) =====
+function acPickMethod(p)
+	for _, mn in ipairs({"placeBlock", "PlaceBlock", "place", "Place"}) do
+		if type(p[mn]) == "function" then return mn end
+	end
+	return nil
+end
+function acTry(p, label)
+	if acPlacer then return end
+	if type(p) == "table" or type(p) == "userdata" then
+		acMN = acPickMethod(p)
+		if acMN then acPlacer = p; acPlaceMethod = acMN; acPlacePath = label end
+	end
+end
+function acResolvePlacer()
+	if acPlaceResolved then return end
+	acPlaceResolved = true
+
+	if not KnitClient then
+		pcall(function()
+			KnitClient = require(game:GetService("ReplicatedStorage").rbxts_include
+				.node_modules["@easy-games"].knit.src).KnitClient
+		end)
+	end
+
+	pcall(function()   -- 1: named controller
+		acC = KnitClient and KnitClient.Controllers and KnitClient.Controllers.BlockPlacementController
+		if acC then acTry(acC.blockPlacer or acC.placer, "BlockPlacementController") end
+	end)
+	pcall(function()   -- 2: search controllers by name
+		if acPlacer or not (KnitClient and KnitClient.Controllers) then return end
+		for k, c in pairs(KnitClient.Controllers) do
+			if type(k) == "string" and k:lower():find("place") then
+				acTry(c.blockPlacer or c.placer or c, "controller:" .. k)
+				if acPlacer then break end
+			end
+		end
+	end)
+	pcall(function()   -- 3: client block engine
+		if acPlacer then return end
+		acCBE = require(Player.PlayerScripts.TS.lib["block-engine"]["client-block-engine"]).ClientBlockEngine
+		if acCBE and acCBE.getBlockPlacer then acTry(acCBE:getBlockPlacer(), "ClientBlockEngine") end
+	end)
+	pcall(function()   -- 4: shared block engine
+		if acPlacer then return end
+		acBE = require(game:GetService("ReplicatedStorage").rbxts_include
+			.node_modules["@easy-games"]["block-engine"].out).BlockEngine
+		if acBE and acBE.getBlockPlacer then acTry(acBE:getBlockPlacer(), "BlockEngine") end
+	end)
+
+	if acPlacer then
+		print("[AC-PLACE] placer found via", acPlacePath, "| method =", acPlaceMethod)
+	else
+		print("[AC-PLACE] NO placer instance -> mouse1click() fallback")
+		pcall(function()
+			if KnitClient and KnitClient.Controllers then
+				acN = {}
+				for k in pairs(KnitClient.Controllers) do if type(k) == "string" then table.insert(acN, k) end end
+				print("[AC-PLACE] controllers seen:", table.concat(acN, ", "))
+			end
+		end)
+	end
+end
+
+function acGetPlacePos()
+	if acPlacer then
+		acOk, acPos = pcall(function()
+			acSel = acPlacer.clientManager and acPlacer.clientManager:getBlockSelector()
+			if acSel then
+				acInfo = acSel:getMouseInfo((BlockSelectorMode and BlockSelectorMode.PLACE) or 0)
+				return acInfo and acInfo.placementPosition or nil
+			end
+		end)
+		if acOk and acPos and acPos == acPos then return acPos end
+	end
+	if BlockSelector then
+		acOk, acPos = pcall(function()
+			acS = BlockSelector.new()
+			acInfo = acS:getMouseInfo((BlockSelectorMode and BlockSelectorMode.PLACE) or 0)
+			return acInfo and acInfo.placementPosition or nil
+		end)
+		if acOk and acPos and acPos == acPos then return acPos end
+	end
+	acM = Player:GetMouse()
+	return acM and acM.Hit and acM.Hit.Position or nil
+end
+
+function acPlaceAtCursor()
+	acResolvePlacer()
+	if tick() - acLastPlace < 0.04 then return end
+	acPos = acGetPlacePos()
+	if not (acPos and acPos == acPos) then return end
+	acLastPlace = tick()
+	if acPlacer and acPlaceMethod then
+		acOk, acErr = pcall(acPlacer[acPlaceMethod], acPlacer, acPos)
+		if not acOk and not acPlaceDiag then acPlaceDiag = true; print("[AC-PLACE] placeBlock threw:", acErr) end
+	else
+		pcall(mouse1click)
+	end
+end
+
+-- ===== the loop (polls mouse1; sword OR block depending on what's in hand) =====
+function autoClickerLoop()
+	while loops["auto clicker"] do
+		held = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) or acMobileHold
+		if held then
+			char = Player.Character
+			hum = char and char:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health > 0 then
+				hi = char:FindFirstChild("HandInvItem")
+				hv = hi and hi.Value
+				heldName = hv and (typeof(hv) == "Instance" and hv.Name or tostring(hv)) or nil
+				isSword = heldName and table.find(swords, heldName) or nil
+
+				if isSword then
+					if AutoClicker.Values["Sword Swings"] then
+						pcall(function() SwordController.lastSwing = 0 end)
+						pcall(function() SwordController:swingSwordAtMouse(0.39) end)
+					end
+				else
+					if heldName and AutoClicker.Values["Block Placement"] then
+						acPlaceAtCursor()
+					end
+				end
+
+				cps = isSword and AutoClicker.Values["Sword CPS"] or AutoClicker.Values["Block CPS"]
+				if not cps or cps <= 0 then cps = 7 end
+				task.wait(1 / cps)
+			else
+				task.wait(0.1)
+			end
+		else
+			task.wait(0.05)
+		end
+	end
+	autoClickerThread = nil
+end
+
+-- ===== toggle =====
+AutoClicker.Callbacks.OnToggle = function(state)
+	loops["auto clicker"] = state
+	if state then
+		if not autoClickerThread then autoClickerThread = task.spawn(autoClickerLoop) end
+		pcall(function()
+			acMob = Player.PlayerGui:FindFirstChild("MobileUI")
+			if acMob then
+				for _, id in ipairs({"2", "5"}) do
+					acBtn = acMob:FindFirstChild(id)
+					if acBtn then
+						acBtn.MouseButton1Down:Connect(function() acMobileHold = true end)
+						acBtn.MouseButton1Up:Connect(function() acMobileHold = false end)
+					end
+				end
+			end
+		end)
+	else
+		if autoClickerThread then task.cancel(autoClickerThread); autoClickerThread = nil end
+		acMobileHold = false
 	end
 end
