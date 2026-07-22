@@ -890,7 +890,8 @@
 		["bed alarm"] = false,
 		["fov"] = false,
 		["sprint"] = false,
-		["trigger bot"] = false
+		["trigger bot"] = false,
+		["auto arrow dodge"] = false
 		}
  
 
@@ -3945,6 +3946,9 @@ local oldGui = PlayerGui:FindFirstChild("FeatherWare")
 
 	NoClickDelay = Combat:CreateButton("No Click Delay", nil, true)
 	NoClickDelay:CreateSlider("CPS", 1, 1000, 1000)
+	
+	AutoArrowDodge = Combat:CreateButton("Auto Arrow Dodge", nil, true)
+	AutoArrowDodge:CreateDropdown("Type", {"Blatant", "Legit"}, "Legit", nil, false)
 
 
 
