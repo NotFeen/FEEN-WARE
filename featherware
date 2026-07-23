@@ -815,6 +815,35 @@
 			end
 		end
 	end
+	
+EntityCache = { players = {}, npcs = {} }
+EC_RUNNING = false
+
+function updateEntityCache()
+	local lp = Players.LocalPlayer
+	local pl, np = {}, {}
+	for _, v in pairs(Players:GetPlayers()) do
+		local c = v.Character
+		local h = c and c:FindFirstChild("HumanoidRootPart")
+		local hum = c and c:FindFirstChildOfClass("Humanoid")
+		if v ~= lp and h and hum and hum.Health > 0 and v.Team ~= lp.Team then
+			table.insert(pl, v)
+		end
+	end
+	for _, m in pairs(workspace:GetChildren()) do
+		if m:IsA("Model") and m.PrimaryPart and m:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(m) then
+			local hum = m:FindFirstChildOfClass("Humanoid")
+			if hum.Health > 0 then table.insert(np, m) end
+		end
+	end
+	EntityCache.players, EntityCache.npcs = pl, np
+end
+
+function startEntityCache()
+	if EC_RUNNING then return end
+	EC_RUNNING = true
+	task.spawn(function() while true do pcall(updateEntityCache); task.wait(0.2) end end)
+end
 
 	loops = {
 		["killaura"] = false,
@@ -1709,6 +1738,8 @@ desync = {
 	phase = "off", accum = 0, frames = 0, vy = 0, grounded = true,
 	lastReal = false,
 }
+
+
 
 function getHRP()
 	c = Player.Character
@@ -3814,7 +3845,7 @@ local oldGui = PlayerGui:FindFirstChild("FeatherWare")
 	Killaura:CreateSlider("TP Reach", 1, 10000, 1000)
 	Killaura:CreateToggle("Manual Swing", false, nil)
 	Killaura:CreateDropdown("Priority", {"Player", "NPC/Dummy", "Nearest"}, "Player", nil)
-	hitRegSlider = Killaura:CreateSlider("Hits per 10s", 1, 36, 34, nil, 0.01)
+	hitRegSlider = Killaura:CreateSlider("Hits per 10s", 1, 35, 34, nil, 0.01)
 	hitDelaySlider = Killaura:CreateSlider("Hit Delay", 0.000001, 0.3, 0.1, nil, 0.005)
 
 	hitRegSlider:SetVisible(false)
@@ -3849,6 +3880,7 @@ local oldGui = PlayerGui:FindFirstChild("FeatherWare")
 	Killaura:CreateSlider("Swing Range", 18, 50, 20, nil, 1)
 	Killaura:CreateSlider("Swing Speed", 0.01, 0.5, 0.111, nil, 0.001)
 	Killaura:CreateToggle("Calculate Swing Speed", false, nil)
+	Killaura:CreateToggle("Range Visualiser", false, nil)
 	
 	TriggerBot = Combat:CreateButton("Trigger Bot",nil, true, true)
 	TriggerBot:CreateToggle("Target Players", true, nil)
@@ -4241,7 +4273,6 @@ local oldGui = PlayerGui:FindFirstChild("FeatherWare")
 
 	Fly = Movement:CreateButton("Fly", nil, true)
 	Fly:CreateSlider("Fly Speed", 1, 100, 50)
-	Fly:CreateSlider("Bypass Interval", 0, 5, 1.5, nil, 0.25)
 
 	InfJump = Movement:CreateButton("Infinite Jump", nil, false)
 	InfJump:CreateToggle("Bypass Jump Limits", true, nil)
@@ -4882,6 +4913,92 @@ end
 	local wallRayParams = RaycastParams.new()
 	wallRayParams.FilterType = Enum.RaycastFilterType.Exclude
 	wallRayParams.IgnoreWater = true
+	
+-- ===== game's own wall check (used when canRequire is true) =====
+kaSwordController = nil
+kaEntityUtil = nil
+pcall(function()
+	kaEntityUtil = require(game:GetService("ReplicatedStorage").TS.entity["entity-util"]).EntityUtil
+end)
+pcall(function()
+	kaKnit = require(game:GetService("ReplicatedStorage").rbxts_include.node_modules["@easy-games"].knit.src).KnitClient
+	kaSwordController = kaKnit.Controllers.SwordController
+end)
+pcall(function()
+	if not kaSwordController then
+		kaSwordController = require(game:GetService("StarterPlayer").StarterPlayerScripts.TS.controllers.global.combat.sword["sword-controller"]).SwordController
+	end
+end)
+
+-- true = line of sight to targetModel (game's canSee when canRequire, else your simple ray)
+function kaCanSee(targetModel)
+	if canRequire and kaSwordController and kaEntityUtil and targetModel then
+		kaPart = targetModel:FindFirstChild("HumanoidRootPart") or targetModel.PrimaryPart
+		if kaPart then
+			kaOk, kaEntity = pcall(function() return kaEntityUtil:getEntity(kaPart) end)
+			if kaOk and kaEntity then
+				kaOk2, kaVisible = pcall(function() return kaSwordController:canSee(kaEntity) end)
+				if kaOk2 then return kaVisible == true end
+			end
+		end
+	end
+	kaChar = Player.Character
+	kaHrp = kaChar and kaChar.PrimaryPart
+	if not kaHrp or not targetModel or not targetModel.PrimaryPart then return false end
+	kaWp = RaycastParams.new()
+	kaWp.FilterDescendantsInstances = {kaChar, targetModel}
+	kaWp.FilterType = Enum.RaycastFilterType.Exclude
+	kaWp.IgnoreWater = true
+	return workspace:Raycast(kaHrp.Position, targetModel.PrimaryPart.Position - kaHrp.Position, kaWp) == nil
+end
+
+-- ===== range visualiser: true glowing circle, radius = Reach, centred on HRP =====
+kaRingFolder = Instance.new("Folder")
+kaRingFolder.Name = "KA_RANGE_RING"
+kaRingFolder.Parent = game.Lighting
+kaRingSegs = {}
+for kaI = 1, 36 do
+	kaSeg = Instance.new("Part")
+	kaSeg.Anchored = true
+	kaSeg.CanCollide = false
+	kaSeg.CanQuery = false
+	kaSeg.CanTouch = false
+	kaSeg.Material = Enum.Material.Neon
+	kaSeg.TopSurface = Enum.SurfaceType.Smooth
+	kaSeg.BottomSurface = Enum.SurfaceType.Smooth
+	kaSeg.CastShadow = false
+	kaSeg.Parent = kaRingFolder
+	kaRingSegs[kaI] = kaSeg
+end
+
+function kaUpdateRing() end   -- stub so your loop call doesn't error; the Heartbeat drives it now
+
+game:GetService("RunService").Heartbeat:Connect(function()
+	if loops["killaura"] and Killaura.Values["Range Visualiser"] then
+		kaChar2 = Player.Character
+		kaHrp2 = kaChar2 and kaChar2:FindFirstChild("HumanoidRootPart")
+		if kaHrp2 then
+			kaR = tonumber(Killaura.Values["Reach"]) or 12.4
+			kaCol = Killaura.Values["3D Box Color"] or Color3.fromRGB(0, 255, 163)
+			kaC = kaHrp2.Position
+			for kaI = 1, 36 do
+				kaA = math.rad((kaI - 1) * 10)
+				kaSeg = kaRingSegs[kaI]
+				kaSeg.Size = Vector3.new(0.28, 0.18, math.max(0.5, kaR * 0.176))  -- length ≈ arc between dots
+				kaSeg.CFrame = CFrame.new(
+					kaC.X + math.cos(kaA) * kaR,
+					kaC.Y - 2.2,                          -- just below your feet; raise toward 0 for HRP-height
+					kaC.Z + math.sin(kaA) * kaR
+				) * CFrame.Angles(0, -kaA, 0)             -- align each segment along the ring
+				kaSeg.Color = kaCol
+				kaSeg.Transparency = 0.12
+			end
+			kaRingFolder.Parent = workspace
+			return
+		end
+	end
+	kaRingFolder.Parent = game.Lighting   -- hide when off / no character
+end)
 
 	Killaura.Callbacks.OnToggle = function(state)
 
@@ -4920,23 +5037,15 @@ end
 					continue
 
 				end
-				local hitDelay = 0
-				if Killaura.Values["Use Hit Reg Slider"] then
-					local hits = tonumber(Killaura.Values["Hits per 10s"])
-					if hits <= 34 then
-						hitDelay = 10 / hits
-					elseif hits == 34.50 then
-						hitDelay = 0.05775
-					elseif hits == 35 then
-						hitDelay = 0.04
-					elseif hits == 35.50 then
-						hitDelay = 0.03
-					elseif hits == 36 then 	
-						hitDelay = 0
-					end
-				else
-					hitDelay = Killaura.Values["Hit Delay"]
-				end
+			local hitDelay = 0
+			if Killaura.Values["Use Hit Reg Slider"] then
+				local hits = tonumber(Killaura.Values["Hits per 10s"]) or 34
+				hitDelay = 10 / math.clamp(hits, 1, 34.99)  
+			else
+				hitDelay = Killaura.Values["Hit Delay"]
+			end
+			
+			   print(hitDelay)
 
 				task.wait(math.max(hitDelay,0.03))
 
@@ -4945,6 +5054,8 @@ end
 					cachedBestTarget = nil
 					kaHighlight.Adornee = nil
 					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 					continue
 				end
 
@@ -4953,15 +5064,20 @@ end
 					currentKaTarget = nil
 					kaHighlight.Adornee = nil
 					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 					continue
 				end
 				local rootPart = char.HumanoidRootPart
+				kaUpdateRing(rootPart)
 				local humanoid = char:FindFirstChild("Humanoid")
 
 				if not humanoid or humanoid.Health <= 0 then
 					currentKaTarget = nil
 					kaHighlight.Adornee = nil
 					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 					continue
 				end
 
@@ -4971,6 +5087,8 @@ end
 						currentKaTarget = nil
 						kaHighlight.Adornee = nil
 						ka3DBox.Parent = game.Lighting
+							kaRingFolder.Parent = game.Lighting
+
 						continue
 					end
 				end
@@ -4980,15 +5098,19 @@ end
 					currentKaTarget = nil
 					kaHighlight.Adornee = nil
 					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 					continue
 				end
 
 				if Killaura.Values["Require Sword Equipped"] == true then
 					if not table.find(swords, tostring(handItem.Value)) then
-						currentKaTarget = nil
-						kaHighlight.Adornee = nil
-						ka3DBox.Parent = game.Lighting
-						continue
+					currentKaTarget = nil
+					kaHighlight.Adornee = nil
+					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
+					continue
 					end
 				end 
 
@@ -5048,6 +5170,7 @@ end
 						currentKaTarget = nil
 						kaHighlight.Adornee = nil
 						ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
 						continue
 					end
 
@@ -5177,7 +5300,6 @@ end
 
 
 				local distance = (HRP.Position - targetHRP.Position).Magnitude
-			-- SWING ANIMATION: pure circle check on Swing Range, reuses the target the killaura already found
 			if Killaura.Values["Swing Animation"] and not Killaura.Values["Manual Swing"] then
 				local swingRange = tonumber(Killaura.Values["Swing Range"]) or 0
 				if swingRange > 0 and distance <= swingRange then
@@ -5211,7 +5333,8 @@ end
 								end
 							end
 						end
-						if loadedSwingTrack and not loadedSwingTrack.IsPlaying then
+						if loadedSwingTrack and not loadedSwingTrack.IsPlaying and (currentClock - lastVisualSwing >= (1 / 9)) then
+							lastVisualSwing = currentClock
 							loadedSwingTrack:Play()
 						end
 					end
@@ -5223,11 +5346,17 @@ end
 					cachedBestTarget = nil 
 					kaHighlight.Adornee = nil
 					ka3DBox.Parent = game.Lighting
+					kaRingFolder.Parent = game.Lighting
 					continue
 				end
 
 				if not targetHRP  then
-					cachedBestTarget = nil
+					currentKaTarget = nil
+					cachedBestTarget = nil 
+					kaHighlight.Adornee = nil
+					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 					continue
 				end
 
@@ -5237,6 +5366,9 @@ end
 					cachedBestTarget = nil
 					kaHighlight.Adornee = nil
 					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
+
 					continue
 				end
 
@@ -5244,40 +5376,36 @@ end
 
 
 
-				-- WALL CHECK
-				if Killaura.Values["Wall Check"] == true then
-					wallRayParams.FilterDescendantsInstances = {
-						Player.Character,
-						besttarget
-					}
+			if Killaura.Values["Wall Check"] == true then
+				if not kaCanSee(besttarget) then
+					currentKaTarget = nil
+					cachedBestTarget = nil 
+					kaHighlight.Adornee = nil
+					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
 
-					local wallRaycast = workspace:Raycast(
-						HRP.Position,
-						targetHRP.Position - HRP.Position,
-						wallRayParams
-					)
-					if wallRaycast then
-						currentKaTarget = nil
-						kaHighlight.Adornee = nil
-						ka3DBox.Parent = game.Lighting
-						continue
-					end
+					continue
 				end
+			end
 
 				-- FOV ANGLE CHECK
 				local angleMet = isInFOV(HRP, targetHRP, Killaura.Values["Angle Check"])
 				if not angleMet then
-					currentKaTarget = nil
-					kaHighlight.Adornee = nil
-					ka3DBox.Parent = game.Lighting
+				currentKaTarget = nil
+				cachedBestTarget = nil 
+				kaHighlight.Adornee = nil
+				ka3DBox.Parent = game.Lighting
+				kaRangeRing.Parent = game.Lighting
 					continue
 				end
 
 				-- MANUAL SWING CHECK
 				if Killaura.Values["Manual Swing"] == true and clicking == false then
-					currentKaTarget = nil
-					kaHighlight.Adornee = nil
-					ka3DBox.Parent = game.Lighting
+				currentKaTarget = nil
+				cachedBestTarget = nil 
+				kaHighlight.Adornee = nil
+				ka3DBox.Parent = game.Lighting
+				kaRangeRing.Parent = game.Lighting
 					continue
 				end
 
@@ -5290,18 +5418,24 @@ end
 				if Killaura.Values["Require Sword Equipped"] == true then
 					inventoryWeapon = invFolder:FindFirstChild(oldItem)
 					if not inventoryWeapon then 
-						currentKaTarget = nil
-						kaHighlight.Adornee = nil
-						ka3DBox.Parent = game.Lighting
+					currentKaTarget = nil
+					cachedBestTarget = nil 
+					kaHighlight.Adornee = nil
+					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 						continue 
 					end
 				else
 					swordName = tostring(getBestEquippedSword(Player.Name))
 					inventoryWeapon = invFolder:FindFirstChild(swordName)
 					if not inventoryWeapon then 
-						currentKaTarget = nil
-						kaHighlight.Adornee = nil
-						ka3DBox.Parent = game.Lighting
+					currentKaTarget = nil
+					cachedBestTarget = nil 
+					kaHighlight.Adornee = nil
+					ka3DBox.Parent = game.Lighting
+						kaRingFolder.Parent = game.Lighting
+
 						continue 
 					end
 				end
@@ -10677,12 +10811,9 @@ bodyVelocity = nil
 
 -- Configuration
 FLY_UP_SPEED = Fly.Values["Fly Speed"] 
-BYPASS_INTERVAL = Fly.Values["Bypass Interval"] 
 
-lastBypassTime = os.clock()
-isBypassing = false
+isTeleportingDown = false
 
--- === NEW: Fuel / Timer Configuration ===
 maxFlyTime = 2.5
 currentFlyTime = maxFlyTime
 
@@ -10704,9 +10835,8 @@ function getCharacterData()
 	return nil
 end
 
--- === NEW: UI Functions ===
+-- === Professional Minimalist UI ===
 function createFlyUI()
-	-- Clean up old UI safely
 	if destroyFlyUI then
 		destroyFlyUI()
 	elseif flyGui then
@@ -10715,7 +10845,6 @@ function createFlyUI()
 	end
 
 	local Players = game:GetService("Players")
-
 	local player = Players.LocalPlayer
 	if not player then
 		Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -10730,189 +10859,82 @@ function createFlyUI()
 	flyGui.DisplayOrder = 999999
 	flyGui.Parent = player:WaitForChild("PlayerGui")
 
-	-- Main background bar (same size and position as yours)
 	local bgBar = Instance.new("Frame")
-	bgBar.Name = "Bar"
+	bgBar.Name = "MainContainer"
 	bgBar.Size = UDim2.new(0, 350, 0, 40)
-	bgBar.Position = UDim2.new(0.5, -175, 1, -150)
-	bgBar.BackgroundColor3 = Color3.fromRGB(8, 9, 12)
+	bgBar.Position = UDim2.new(0.5, -175, 1, -200)
+	bgBar.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+	bgBar.BackgroundTransparency = 0.2 
 	bgBar.BorderSizePixel = 0
 	bgBar.ZIndex = 1
 	bgBar.Parent = flyGui
 
 	local bgCorner = Instance.new("UICorner")
-	bgCorner.CornerRadius = UDim.new(0, 10)
+	bgCorner.CornerRadius = UDim.new(0, 4)
 	bgCorner.Parent = bgBar
 
-	local bgGradient = Instance.new("UIGradient")
-	bgGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 33, 41)),
-		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(14, 15, 20)),
-		ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 7, 10)),
-	})
-	bgGradient.Rotation = 90
-	bgGradient.Parent = bgBar
-
 	local bgStroke = Instance.new("UIStroke")
-	bgStroke.Color = Color3.fromRGB(92, 98, 118)
+	bgStroke.Color = Color3.fromRGB(255, 255, 255)
+	bgStroke.Transparency = 0.88
 	bgStroke.Thickness = 1
-	bgStroke.Transparency = 0.35
 	bgStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
 	bgStroke.Parent = bgBar
 
-	-- Subtle top highlight for a glassy/modern look
-	local topHighlight = Instance.new("Frame")
-	topHighlight.Name = "TopHighlight"
-	topHighlight.Size = UDim2.new(1, -2, 0.5, 0)
-	topHighlight.Position = UDim2.new(0, 1, 0, 1)
-	topHighlight.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	topHighlight.BorderSizePixel = 0
-	topHighlight.ZIndex = 2
-	topHighlight.Parent = bgBar
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleText"
+	titleLabel.Size = UDim2.new(0, 100, 0, 14)
+	titleLabel.Position = UDim2.new(0, 16, 0, 8)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = "FLIGHT TIME"
+	titleLabel.Font = Enum.Font.GothamMedium
+	titleLabel.TextSize = 10
+	titleLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.ZIndex = 2
+	titleLabel.Parent = bgBar
 
-	local topHighlightCorner = Instance.new("UICorner")
-	topHighlightCorner.CornerRadius = UDim.new(0, 9)
-	topHighlightCorner.Parent = topHighlight
+	-- Crisp White Timer Text
+	fuelTextLabel = Instance.new("TextLabel")
+	fuelTextLabel.Name = "TimeText"
+	fuelTextLabel.Size = UDim2.new(0, 50, 0, 14)
+	fuelTextLabel.Position = UDim2.new(1, -66, 0, 8)
+	fuelTextLabel.BackgroundTransparency = 1
+	fuelTextLabel.Text = string.format("%.1fs", maxFlyTime)
+	fuelTextLabel.Font = Enum.Font.GothamBold
+	fuelTextLabel.TextSize = 12
+	fuelTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	fuelTextLabel.TextXAlignment = Enum.TextXAlignment.Right
+	fuelTextLabel.ZIndex = 2
+	fuelTextLabel.Parent = bgBar
 
-	local topHighlightGradient = Instance.new("UIGradient")
-	topHighlightGradient.Color = ColorSequence.new(
-		Color3.fromRGB(255, 255, 255),
-		Color3.fromRGB(255, 255, 255)
-	)
-	topHighlightGradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.88),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	topHighlightGradient.Rotation = 90
-	topHighlightGradient.Parent = topHighlight
-
-	-- Inner track for the fill bar
+	-- Faint background track for the bar
 	local track = Instance.new("Frame")
 	track.Name = "Track"
-	track.Size = UDim2.new(1, -6, 1, -6)
-	track.Position = UDim2.new(0, 3, 0, 3)
-	track.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	track.BackgroundTransparency = 0.55
+	track.Size = UDim2.new(1, -32, 0, 4)
+	track.Position = UDim2.new(0, 16, 1, -12)
+	track.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	track.BackgroundTransparency = 0.85
 	track.BorderSizePixel = 0
-	track.ZIndex = 3
+	track.ZIndex = 2
 	track.Parent = bgBar
 
 	local trackCorner = Instance.new("UICorner")
-	trackCorner.CornerRadius = UDim.new(0, 7)
+	trackCorner.CornerRadius = UDim.new(1, 0)
 	trackCorner.Parent = track
 
-	local trackStroke = Instance.new("UIStroke")
-	trackStroke.Color = Color3.fromRGB(0, 0, 0)
-	trackStroke.Thickness = 1
-	trackStroke.Transparency = 0.65
-	trackStroke.Parent = track
-
-	-- Fill bar
-	-- This remains global as fuelBarFill so your existing update code still works.
+	-- Pure white fill bar
 	fuelBarFill = Instance.new("Frame")
 	fuelBarFill.Name = "Fill"
 	fuelBarFill.Size = UDim2.new(1, 0, 1, 0)
 	fuelBarFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	fuelBarFill.BackgroundTransparency = 0.1
 	fuelBarFill.BorderSizePixel = 0
-	fuelBarFill.ZIndex = 4
+	fuelBarFill.ZIndex = 3
 	fuelBarFill.Parent = track
 
 	local fillCorner = Instance.new("UICorner")
-	fillCorner.CornerRadius = UDim.new(0, 7)
+	fillCorner.CornerRadius = UDim.new(1, 0)
 	fillCorner.Parent = fuelBarFill
-
-	local fillStroke = Instance.new("UIStroke")
-	fillStroke.Color = Color3.fromRGB(255, 255, 255)
-	fillStroke.Thickness = 1
-	fillStroke.Transparency = 0.55
-	fillStroke.Parent = fuelBarFill
-
-	-- Bottom shading for depth
-	local fillShade = Instance.new("Frame")
-	fillShade.Name = "BottomShade"
-	fillShade.Size = UDim2.new(1, 0, 1, 0)
-	fillShade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	fillShade.BorderSizePixel = 0
-	fillShade.ZIndex = 5
-	fillShade.Parent = fuelBarFill
-
-	local fillShadeCorner = Instance.new("UICorner")
-	fillShadeCorner.CornerRadius = UDim.new(0, 7)
-	fillShadeCorner.Parent = fillShade
-
-	local fillShadeGradient = Instance.new("UIGradient")
-	fillShadeGradient.Color = ColorSequence.new(
-		Color3.fromRGB(0, 0, 0),
-		Color3.fromRGB(0, 0, 0)
-	)
-	fillShadeGradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.55, 0.94),
-		NumberSequenceKeypoint.new(1, 0.72),
-	})
-	fillShadeGradient.Rotation = 90
-	fillShadeGradient.Parent = fillShade
-
-	-- Top gloss highlight
-	local fillGloss = Instance.new("Frame")
-	fillGloss.Name = "TopGloss"
-	fillGloss.Size = UDim2.new(1, 0, 0.42, 0)
-	fillGloss.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-	fillGloss.BorderSizePixel = 0
-	fillGloss.ZIndex = 6
-	fillGloss.Parent = fuelBarFill
-
-	local fillGlossCorner = Instance.new("UICorner")
-	fillGlossCorner.CornerRadius = UDim.new(0, 7)
-	fillGlossCorner.Parent = fillGloss
-
-	local fillGlossGradient = Instance.new("UIGradient")
-	fillGlossGradient.Color = ColorSequence.new(
-		Color3.fromRGB(255, 255, 255),
-		Color3.fromRGB(255, 255, 255)
-	)
-	fillGlossGradient.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.78),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	fillGlossGradient.Rotation = 90
-	fillGlossGradient.Parent = fillGloss
-
-	-- Small modern HUD label
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Name = "Title"
-	titleLabel.Size = UDim2.new(0, 58, 1, 0)
-	titleLabel.Position = UDim2.new(0, 12, 0, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = "FLY"
-	titleLabel.Font = Enum.Font.MontserratBold
-	titleLabel.TextSize = 12
-	titleLabel.TextColor3 = Color3.fromRGB(167, 173, 192)
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.TextTransparency = 0.08
-	titleLabel.ZIndex = 8
-	titleLabel.Parent = bgBar
-
-	-- Time/fuel text
-	-- This remains global as fuelTextLabel so your existing update code still works.
-	fuelTextLabel = Instance.new("TextLabel")
-	fuelTextLabel.Name = "TimeText"
-	fuelTextLabel.Size = UDim2.new(1, -82, 1, 0)
-	fuelTextLabel.Position = UDim2.new(0, 70, 0, 0)
-	fuelTextLabel.BackgroundTransparency = 1
-	fuelTextLabel.Text = "2.5s"
-	fuelTextLabel.Font = Enum.Font.MontserratBold
-	fuelTextLabel.TextSize = 20
-	fuelTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	fuelTextLabel.TextXAlignment = Enum.TextXAlignment.Right
-	fuelTextLabel.ZIndex = 9
-	fuelTextLabel.Parent = bgBar
-
-	local textStroke = Instance.new("UIStroke")
-	textStroke.Color = Color3.fromRGB(4, 5, 7)
-	textStroke.Thickness = 2
-	textStroke.Transparency = 0.35
-	textStroke.Parent = fuelTextLabel
 end
 
 function destroyFlyUI()
@@ -10925,132 +10947,135 @@ function destroyFlyUI()
 end
 
 function startFlying()
+	-- Safety check to prevent duplicate loops making the timer drain double-speed
+	if flyConnection then
+		flyConnection:Disconnect()
+		flyConnection = nil
+	end
+
 	char, hrp, hum = getCharacterData()
 	if not hrp then return end
 
-	-- Lift the player off the ground slightly to prevent floor friction bugs
 	hrp.CFrame = hrp.CFrame + Vector3.new(0, 0.1, 0)
 	hum:ChangeState(Enum.HumanoidStateType.Freefall)
 
+	if bodyVelocity then bodyVelocity:Destroy() end
 	bodyVelocity = Instance.new("BodyVelocity")
 	bodyVelocity.Name = "VerticalFlyForce"
-
-	-- Lock Y-axis only
-	bodyVelocity.MaxForce = Vector3.new(0, 9e9, 0) 
+	bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9) 
 	bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 	bodyVelocity.Parent = hrp
 
-	lastBypassTime = os.clock()
-	isBypassing = false
-
-	-- Reset timer to 2.5s and create UI on toggle
+	isTeleportingDown = false
 	currentFlyTime = maxFlyTime
 	createFlyUI()
 
-	-- Setup Raycast parameters for the ground check
 	rayParams = RaycastParams.new()
 	rayParams.FilterDescendantsInstances = {char}
 	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-	-- Connect to frame updates (We grab deltaTime here to make the timer accurate)
-	flyConnection = RunService.Heartbeat:Connect(function(deltaTime)
+	-- We use a custom real-time clock to avoid executor deltaTime glitches
+	local lastFrameTime = os.clock()
+
+	flyConnection = RunService.Heartbeat:Connect(function()
+		-- Calculate true real-world time passed since last frame
+		local currentFrameTime = os.clock()
+		local realDelta = currentFrameTime - lastFrameTime
+		lastFrameTime = currentFrameTime
+
 		currentChar, currentHrp, currentHum = getCharacterData()
 
-		-- Auto-clean if player dies or despawns
 		if not currentHrp or not currentHum then
 			stopFlying()
 			return
 		end
 
-		-- Keep bodyVelocity inside the RootPart
 		if bodyVelocity.Parent ~= currentHrp then
 			bodyVelocity.Parent = currentHrp
 		end
 
-		-- RAYCAST: Check distance to the ground
 		rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
 		distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
 
-		-- === NEW: Handle 2.5s Timer Logic ===
-		if distToGround > 4 then
-			-- We are in the air, drain the timer
-			currentFlyTime = math.max(0, currentFlyTime - deltaTime)
-		else
-			-- We touched land, freeze/refill the timer to 2.5s
-			currentFlyTime = maxFlyTime
+		-- === Fuel Drain Logic using strictly real time ===
+		if not isTeleportingDown then
+			if distToGround > 4 then
+				currentFlyTime = math.max(0, currentFlyTime - realDelta)
+			else
+				currentFlyTime = maxFlyTime
+			end
 		end
 
-		-- Update the UI visuals
+		-- === UI Visual Updates ===
 		if fuelBarFill and fuelTextLabel then
-			-- Make the bar turn red when below 1 second
-			if currentFlyTime > 1.0 then
-				fuelBarFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			-- Drops opacity slightly when empty so it doesn't vanish entirely, keeping the frame clean
+			if currentFlyTime <= 0 then
+				fuelBarFill.BackgroundTransparency = 1
 			else
-				fuelBarFill.BackgroundColor3 = Color3.fromRGB(74, 74, 74)
+				fuelBarFill.BackgroundTransparency = 0.1
 			end
 
 			fuelBarFill.Size = UDim2.new(currentFlyTime / maxFlyTime, 0, 1, 0)
 			fuelTextLabel.Text = string.format("%.1fs", currentFlyTime)
 		end
 
-		-- If Timer reaches 0, force a "restart" by dropping them to the floor
-		if currentFlyTime <= 0 then
-			isBypassing = true
-			bodyVelocity.Velocity = Vector3.new(0, -45, 0)
-			-- Skip the rest of the script so they can't fly up until they touch the ground
+		-- === Timer Depleted: Ground Reset Logic (0.45s) ===
+		if currentFlyTime <= 0 and not isTeleportingDown then
+			isTeleportingDown = true
+
+			task.spawn(function()
+				local originalPosition = currentHrp.CFrame
+				local downRay = workspace:Raycast(currentHrp.Position, Vector3.new(0, -500, 0), rayParams)
+
+				if downRay then
+					-- Rapid touch-down on the surface
+					currentHrp.CFrame = CFrame.new(downRay.Position + Vector3.new(0, 3, 0))
+				end
+
+				if bodyVelocity then
+					bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+				end
+
+				-- Hold on ground for exactly 0.45 seconds
+				task.wait(0.45)
+
+				if currentHrp and bodyVelocity then
+					-- Teleport back to air position and refill timer
+					currentHrp.CFrame = originalPosition
+					currentFlyTime = maxFlyTime
+					lastFrameTime = os.clock() -- Prevent massive delta drop upon returning
+				end
+
+				isTeleportingDown = false
+			end)
+
 			return
 		end
 
-		-- 1. Anti-Cheat Drop Bypass (Every X seconds)
-		if os.clock() - lastBypassTime >= Fly.Values["Bypass Interval"] and not isBypassing then
-			if distToGround > 4 then
-				isBypassing = true
-				task.spawn(function()
-					if not bodyVelocity then return end
+		if isTeleportingDown then
+			return
+		end
 
-					bodyVelocity.Velocity = Vector3.new(0, -35, 0)
-					task.wait(0.03) -- Fall for 30ms
+		-- === Standard Movement Handling (Vertical + W/A/S/D) ===
+		targetYVelocity = 0
+		local moveDir = Vector3.new(0, 0, 0)
 
-					if not bodyVelocity then 
-						isBypassing = false
-						return 
-					end
+		isTyping = UserInputService:GetFocusedTextBox() ~= nil
 
-					bodyVelocity.Velocity = Vector3.new(0, 45, 0)
-					task.wait(0.05) -- Pull up for 50ms
+		if not isTyping then
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+				targetYVelocity = Fly.Values["Fly Speed"]
+			end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+				targetYVelocity = -Fly.Values["Fly Speed"]
+			end
 
-					if not bodyVelocity then 
-						isBypassing = false
-						return 
-					end
-
-					-- Resume normal hover
-					bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-					lastBypassTime = os.clock()
-					isBypassing = false
-				end)
-			else
-				lastBypassTime = os.clock()
+			if currentHum and currentHum.MoveDirection.Magnitude > 0 then
+				moveDir = currentHum.MoveDirection * currentHum.WalkSpeed
 			end
 		end
 
-		-- 2. Handle Fly Inputs (Only when not bypassing)
-		if not isBypassing then
-			targetYVelocity = 0
-
-			isTyping = UserInputService:GetFocusedTextBox() ~= nil
-
-			if not isTyping then
-				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-					targetYVelocity = Fly.Values["Fly Speed"]
-				end
-				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-					targetYVelocity = -Fly.Values["Fly Speed"]
-				end
-			end
-
-			bodyVelocity.Velocity = Vector3.new(0, targetYVelocity, 0)
-		end
+		bodyVelocity.Velocity = Vector3.new(moveDir.X, targetYVelocity, moveDir.Z)
 	end)
 end
 
@@ -11064,7 +11089,6 @@ function stopFlying()
 		bodyVelocity = nil
 	end
 
-	-- Destroy the UI when toggled off
 	destroyFlyUI()
 end
 
@@ -12008,4 +12032,313 @@ SpinBot.Callbacks.OnToggle = function(state)
 		if hum then hum.AutoRotate = (orig ~= nil) and orig or true end
 		spin.origAuto = nil
 	end
+end
+
+-- ===== requires (globals; timeouts so a wrong path can't hang) =====
+paRS = game:GetService("ReplicatedStorage")
+PA_PROJ_META, paGetItemMeta, paNet, paFire, paHit, paItems, paInv, paSetInv = {}, nil, nil, nil, nil, nil, nil, nil
+pcall(function()
+	PA_PROJ_META = require(paRS:WaitForChild("TS",5):WaitForChild("projectile",5):WaitForChild("projectile-meta",5)).ProjectileMeta or {}
+end)
+pcall(function() paGetItemMeta = require(paRS:WaitForChild("TS",5):WaitForChild("item",5):WaitForChild("item-meta",5)).getItemMeta end)
+pcall(function()
+	paNet = paRS:WaitForChild("rbxts_include",5):WaitForChild("node_modules",5):WaitForChild("@rbxts",5)
+		:WaitForChild("net",5):WaitForChild("out",5):WaitForChild("_NetManaged",5)
+	paSetInv = paNet:WaitForChild("SetInvItem", 5)
+	paFire = paNet:WaitForChild("ProjectileFire",5)
+	paHit  = paNet:WaitForChild("ProjectileHit",5)
+end)
+pcall(function() paItems = paRS:WaitForChild("Items",5) end)
+pcall(function() paInv = paRS:WaitForChild("Inventories",5):FindFirstChild(Players.LocalPlayer.Name) end)
+
+-- ===== button + controls =====
+ProjectileAura = Combat:CreateButton("Projectile Aura", nil, true)
+ProjectileAura:CreateToggle("Target Players", true, nil)
+ProjectileAura:CreateToggle("Target NPCs/Dummies", false, nil)
+ProjectileAura:CreateToggle("Show Projectiles", true, nil)
+ProjectileAura:CreateToggle("Lead Targets", true, nil)
+ProjectileAura:CreateSlider("Fire Delay", 0.03, 1, 0.15, nil, 0.01)
+
+-- ===== state =====
+PA_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+PA_VIS, PA_VIS_FOLDER, PA_VIS_CONN = {}, nil, nil
+PA_LOADOUTS, PA_REBUILT, PA_DIAG = {}, 0, false
+PA_MANAGED, paSavedHand, paLastShot = {}, nil, 0
+
+
+-- is this inventory item one the aura equips? (so we never mistake it for the player's real item)
+function paIsManaged(inst)
+	return inst ~= nil and PA_MANAGED ~= nil and PA_MANAGED[inst] == true
+end
+
+-- hand the player's original item back
+function paRestoreHand()
+	if paSavedHand and paSetInv then
+		pcall(function() paSetInv:InvokeServer({ hand = paSavedHand }) end)
+	end
+end
+
+
+function paGenId()
+	pag_s = {}
+	for pag_i = 1, 8 do pag_s[pag_i] = PA_CHARSET:sub(math.random(1, #PA_CHARSET), math.random(1, #PA_CHARSET)) end
+	return table.concat(pag_s)
+end
+
+function paTier(low, base, iron, gold)
+	if low:find("iron") then return iron end
+	if low:find("gold") or low:find("diamond") or low:find("emerald") then return gold end
+	return base
+end
+
+function paResolve(itemType, inst)
+	par_pm = PA_PROJ_META[itemType]
+	if par_pm and par_pm.combat and par_pm.combat.damage then
+		return { weapon = inst, ammo = itemType, projectile = itemType, damage = par_pm.combat.damage, kind = "throw" }
+	end
+	par_low = itemType:lower()
+	par_proj = nil
+	if par_low:find("headhunter") then par_proj = paTier(par_low, "tactical_headhunter_arrow", "tactical_headhunter_arrow_iron", "tactical_headhunter_arrow_iron")
+	elseif par_low:find("tactical")  then par_proj = paTier(par_low, "tactical_crossbow_arrow", "tactical_crossbow_arrow_iron", "tactical_crossbow_arrow_iron")
+	elseif par_low:find("crossbow")  then par_proj = paTier(par_low, "crossbow_arrow", "crossbow_arrow_iron", "tactical_crossbow_arrow")
+	elseif par_low:find("bow")       then par_proj = paTier(par_low, "arrow", "iron_arrow", "golden_arrow")
+	end
+	if par_proj and PA_PROJ_META[par_proj] then
+		return { weapon = inst, ammo = "arrow", projectile = par_proj, damage = (PA_PROJ_META[par_proj].combat and PA_PROJ_META[par_proj].combat.damage) or 0, kind = "weapon" }
+	end
+	if paGetItemMeta then
+		par_ok, par_m = pcall(paGetItemMeta, itemType)
+		if par_ok and par_m then
+			par_found = nil
+			for _, par_v in pairs(par_m) do
+				if type(par_v) == "string" and PA_PROJ_META[par_v] then par_found = par_v break end
+				if type(par_v) == "table" then for _, par_v2 in pairs(par_v) do if type(par_v2) == "string" and PA_PROJ_META[par_v2] then par_found = par_v2 break end end end
+				if par_found then break end
+			end
+			if par_found then return { weapon = inst, ammo = "arrow", projectile = par_found, damage = (PA_PROJ_META[par_found].combat and PA_PROJ_META[par_found].combat.damage) or 0, kind = "discovered" } end
+		end
+	end
+	return nil
+end
+
+function paAmount(name)
+	if not paInv then return 0 end
+	pam_i = paInv:FindFirstChild(name)
+	return pam_i and (pam_i:GetAttribute("Amount") or 0) or 0
+end
+
+function paBuildLoadouts()
+	PA_LOADOUTS = {}
+	if not paInv then return end
+	for _, pab_inst in pairs(paInv:GetChildren()) do
+		pab_L = paResolve(pab_inst.Name, pab_inst)
+		if pab_L then
+			pab_ok = (pab_L.kind == "throw") and paAmount(pab_inst.Name) > 0 or (pab_L.kind ~= "throw") and paAmount(pab_L.ammo) > 0
+			if pab_ok then table.insert(PA_LOADOUTS, pab_L) end
+		end
+	end
+	table.sort(PA_LOADOUTS, function(a, b) return a.damage > b.damage end)
+	
+	PA_MANAGED = {}
+	for _, pabm_L in ipairs(PA_LOADOUTS) do PA_MANAGED[pabm_L.weapon] = true end
+end
+
+-- closed-form ballistic solve: |velocity| == launchVelocity exactly (the server's invariant)
+function paSolve(O, T, v, g)
+	pasol_d = T - O
+	pasol_R = math.sqrt(pasol_d.X*pasol_d.X + pasol_d.Z*pasol_d.Z)
+	if v <= 0 then return nil end
+	if pasol_R < 0.5 then return Vector3.new(0, pasol_d.Y >= 0 and v or -v, 0), math.abs(pasol_d.Y)/v end
+	pasol_v2 = v*v
+	pasol_disc = pasol_v2*pasol_v2 - g*(g*pasol_R*pasol_R + 2*pasol_d.Y*pasol_v2)
+	if pasol_disc < 0 then return nil end
+	pasol_tanT = (pasol_v2 - math.sqrt(pasol_disc)) / (g*pasol_R)
+	pasol_cosT = 1 / math.sqrt(1 + pasol_tanT*pasol_tanT)
+	pasol_hDir = Vector3.new(pasol_d.X, 0, pasol_d.Z) * (1/pasol_R)
+	return pasol_hDir*(v*pasol_cosT) + Vector3.new(0, v*pasol_tanT*pasol_cosT, 0), pasol_R/(v*pasol_cosT)
+end
+
+function paAim(O, hrp, vel, v, g, life)
+	paa_T = hrp
+	for paa_i = 1, 2 do
+		paa_vt, paa_t = paSolve(O, paa_T, v, g)
+		if not paa_vt or paa_t > (life or 3) then return nil end
+		paa_T = hrp + vel*paa_t
+	end
+	return paa_vt, paa_t
+end
+
+function paConsider(model, h, v)
+	pap_d = (pap_my - h.Position).Magnitude
+	if not pap_bd or pap_d < pap_bd then pap_best, pap_bd, pap_bh, pap_bv = model, pap_d, h, v end
+end
+
+function paPickTarget()
+	pap_char = Players.LocalPlayer.Character
+	pap_my = pap_char and pap_char:FindFirstChild("HumanoidRootPart")
+	if not pap_my then return nil end
+	pap_my = pap_my.Position
+	pap_best, pap_bd, pap_bh, pap_bv = nil, nil, nil, nil
+	if ProjectileAura.Values["Target Players"] then
+		for _, pap_pl in ipairs(EntityCache.players) do
+			pap_c = pap_pl.Character; pap_h = pap_c and pap_c:FindFirstChild("HumanoidRootPart")
+			if pap_h then paConsider(pap_c, pap_h, pap_h.AssemblyLinearVelocity) end
+		end
+	end
+	if ProjectileAura.Values["Target NPCs/Dummies"] then
+		for _, pap_m in ipairs(EntityCache.npcs) do
+			pap_h = pap_m:FindFirstChild("HumanoidRootPart") or pap_m.PrimaryPart
+			if pap_h then paConsider(pap_m, pap_h, Vector3.zero) end
+		end
+	end
+	return pap_best, pap_bh, pap_bv
+end
+
+-- clone the Handle out of an Accessory (or the part/model directly) so we can aim it without errors
+function paSpawnVisual(pProj, pPm, pO, pVel, pG)
+	if #PA_VIS >= 16 then return end
+	pas_modelName = (pPm and pPm.projectileModel) or pProj
+	pas_srcRoot = paItems and paItems:FindFirstChild(pas_modelName)
+	if not pas_srcRoot then return end
+	if pas_srcRoot:IsA("Accessory") then
+		pas_src = pas_srcRoot:FindFirstChild("Handle")        -- the part that actually holds the mesh
+	else
+		pas_src = pas_srcRoot
+	end
+	if not pas_src then return end
+	pas_clone = pas_src:Clone()
+	pas_clone.Parent = PA_VIS_FOLDER
+	if pas_clone:IsA("BasePart") then
+		pas_mover = pas_clone; pas_isModel = false
+	elseif pas_clone:IsA("Model") then
+		pas_isModel = true
+		pas_mover = pas_clone.PrimaryPart
+		if not pas_mover then pas_clone.PrimaryPart = pas_clone:FindFirstChildWhichIsA("BasePart"); pas_mover = pas_clone.PrimaryPart end
+	else
+		pas_clone:Destroy(); return
+	end
+	if not pas_mover then pas_clone:Destroy(); return end
+	if pas_mover:IsA("BasePart") then
+		pas_mover.Anchored = true; pas_mover.CanCollide = false; pas_mover.CanQuery = false; pas_mover.CanTouch = false
+	end
+	pas_dir = pVel.Magnitude > 0 and pVel.Unit or Vector3.new(0,1,0)
+	pas_fr = (pPm and pPm.flightRotation) or Vector3.new(0,0,0)
+	pas_cf = CFrame.lookAt(pO, pO + pas_dir) * CFrame.Angles(pas_fr.X, pas_fr.Y, pas_fr.Z)
+	if pas_isModel then pas_clone:PivotTo(pas_cf) else pas_mover.CFrame = pas_cf end
+	table.insert(PA_VIS, { obj = pas_clone, mover = pas_mover, isModel = pas_isModel, O = pO, V = pVel, g = pG, fr = pas_fr, t0 = tick(), life = (pPm and pPm.lifetimeSec) or 2 })
+end
+
+-- the in-flight shot: ids/target carried as PARAMETERS (upvalues) so the delayed hit never goes stale
+function paDoShot(pL, pO, pVel, pT, pTgt, pG, pProj, pPm, pFid, pSid)
+	-- server only accepts the shot if the weapon is in hand -> equip it first
+	pae_char = Players.LocalPlayer.Character
+	pae_hi = pae_char and pae_char:FindFirstChild("HandInvItem")
+	pae_curName = pae_hi and pae_hi.Value and tostring(pae_hi.Value) or nil
+	pae_curInst = pae_curName and paInv and paInv:FindFirstChild(pae_curName) or nil
+	if pae_curInst and not paIsManaged(pae_curInst) then paSavedHand = pae_curInst end   -- remember the player's real item (sword/block/...)
+	if pae_curInst ~= pL.weapon and paSetInv then
+		pcall(function() paSetInv:InvokeServer({ hand = pL.weapon }) end)               -- swap to the bow / throwable
+	end
+
+	paf_args = {
+		pL.weapon, pL.ammo, pL.projectile,
+		vector.create(pO.X, pO.Y, pO.Z), vector.create(pO.X, pO.Y, pO.Z),
+		vector.create(pVel.X, pVel.Y, pVel.Z),
+		pFid, { shotId = pSid, drawDurationSec = 0 },
+		workspace:GetServerTimeNow(),
+	}
+	paf_ok = pcall(function() paFire:InvokeServer(unpack(paf_args)) end)
+	if paf_ok then
+		paLastShot = tick()
+		task.delay(math.min(math.max(pT, 0), 3), function() pcall(function() paHit:FireServer(pFid, pTgt) end) end)
+	end
+	if ProjectileAura.Values["Show Projectiles"] then paSpawnVisual(pProj, pPm, pO, pVel, pG) end
+end
+
+function paFireShot(L, O, vel, t, target, g, projName, pm)
+	paf_fireId, paf_shotId = paGenId(), paGenId()
+	task.spawn(paDoShot, L, O, vel, t, target, g, projName, pm, paf_fireId, paf_shotId)
+end
+
+function paVisTick()
+	pav_now = tick(); pav_i = 1
+	while pav_i <= #PA_VIS do
+		pav_e = PA_VIS[pav_i]; pav_t = pav_now - pav_e.t0
+		if pav_t >= pav_e.life or not pav_e.obj.Parent then
+			pcall(function() pav_e.obj:Destroy() end); table.remove(PA_VIS, pav_i)
+		else
+			pav_p = pav_e.O + pav_e.V*pav_t + Vector3.new(0, -0.5*pav_e.g*pav_t*pav_t, 0)
+			pav_cv = pav_e.V + Vector3.new(0, -pav_e.g*pav_t, 0)
+			pav_d = pav_cv.Magnitude > 0.001 and pav_cv.Unit or Vector3.new(0,1,0)
+			pav_cf = CFrame.lookAt(pav_p, pav_p + pav_d) * CFrame.Angles(pav_e.fr.X, pav_e.fr.Y, pav_e.fr.Z)
+			if pav_e.isModel then pav_e.obj:PivotTo(pav_cf) else pav_e.mover.CFrame = pav_cf end
+			pav_i = pav_i + 1
+		end
+	end
+end
+
+ProjectileAura.Callbacks.OnToggle = function(state)
+	loops["projectile aura"] = state
+	if not state then
+		if PA_VIS_CONN then PA_VIS_CONN:Disconnect(); PA_VIS_CONN = nil end
+		for _, pa_e in ipairs(PA_VIS) do pcall(function() pa_e.obj:Destroy() end) end
+		PA_VIS = {}
+		paRestoreHand()
+		paSavedHand = nil
+		paLastShot = 0
+		PA_MANAGED = {}
+		return
+	end
+
+	startEntityCache()
+	if not PA_VIS_FOLDER then PA_VIS_FOLDER = Instance.new("Folder"); PA_VIS_FOLDER.Name = "PA_Projectiles"; PA_VIS_FOLDER.Parent = workspace end
+	paSavedHand = nil
+	paLastShot = 0
+	if not PA_VIS_CONN then PA_VIS_CONN = game:GetService("RunService").Heartbeat:Connect(paVisTick) end
+
+	if not PA_DIAG then
+		PA_DIAG = true
+		pad_lines, pad_n = {}, 0
+		if paInv then
+			for _, pad_inst in pairs(paInv:GetChildren()) do
+				pad_n = pad_n + 1; if pad_n > 40 then break end
+				pad_L = paResolve(pad_inst.Name, pad_inst)
+				table.insert(pad_lines, pad_inst.Name .. "=" .. (pad_L and (pad_L.kind .. ":" .. pad_L.projectile) or "UNRESOLVED"))
+			end
+		end
+		print("[PA] meta=" .. tostring(next(PA_PROJ_META) ~= nil) .. " fire=" .. tostring(paFire ~= nil)
+			.. " hit=" .. tostring(paHit ~= nil) .. " items=" .. tostring(paItems ~= nil)
+			.. " | inventory: " .. table.concat(pad_lines, ", "))
+	end
+
+	task.spawn(function()
+		while loops["projectile aura"] do
+			if paSavedHand and paLastShot and tick() - paLastShot > 0.35 then paRestoreHand() end
+			if not (ProjectileAura.Values["Target Players"] or ProjectileAura.Values["Target NPCs/Dummies"]) then
+				task.wait(0.25)
+			else
+				if tick() - PA_REBUILT > 0.25 then PA_REBUILT = tick(); paBuildLoadouts() end
+				pa_target, pa_hrp, pa_vel = paPickTarget()
+				if pa_target and #PA_LOADOUTS > 0 then
+					pa_char = Players.LocalPlayer.Character
+					pa_my = pa_char and pa_char:FindFirstChild("HumanoidRootPart")
+					if pa_my then
+						pa_O = pa_my.Position
+						pa_lead = ProjectileAura.Values["Lead Targets"] and pa_vel or Vector3.zero
+						for _, pa_L in ipairs(PA_LOADOUTS) do
+							pa_still = (pa_L.kind == "throw") and paAmount(pa_L.weapon.Name) > 0 or paAmount(pa_L.ammo) > 0
+							if pa_still then
+								pa_pm = PA_PROJ_META[pa_L.projectile]
+								if pa_pm then
+									pa_vt, pa_t = paAim(pa_O, pa_hrp.Position, pa_lead, pa_pm.launchVelocity, pa_pm.gravitationalAcceleration or 0, pa_pm.lifetimeSec or 3)
+									if pa_vt then paFireShot(pa_L, pa_O, pa_vt, pa_t, pa_target, pa_pm.gravitationalAcceleration or 0, pa_L.projectile, pa_pm); break end
+								end
+							end
+						end
+					end
+				end
+				task.wait(ProjectileAura.Values["Fire Delay"] or 0.15)
+			end
+		end
+	end)
 end
