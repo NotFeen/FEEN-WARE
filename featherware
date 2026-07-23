@@ -891,8 +891,11 @@
 		["fov"] = false,
 		["sprint"] = false,
 		["trigger bot"] = false,
-		["auto arrow dodge"] = false
-		}
+		["auto arrow dodge"] = false,
+		["swim"] = false,
+		["nofall"] = false,
+		["spin bot"] = false
+ 		}
  
 
 	--REMOTE EVENTS/FUNCTIONS--
@@ -4263,10 +4266,12 @@ local oldGui = PlayerGui:FindFirstChild("FeatherWare")
 	LongJump = Movement:CreateButton("LongJump", nil, true)
 	LongJump:CreateToggle("Fireball Jump", nil, false)
 	LongJump:CreateToggle("Auto UnToggle", nil, false)
-
+	
+	Swim = Movement:CreateButton("Swim", nil, true)
+	
 
 	--Game
-	Emote = GameTab:CreateButton("Emote", nil, true)
+		Emote = GameTab:CreateButton("Emote", nil, true)
 	Emote:CreateDropdown("Emote Type", emotes)
 
 	Gravity = GameTab:CreateButton("Gravity", nil, true)
@@ -10667,152 +10672,411 @@ end
 		loops["auto clicker"] = state
 	end
 
+flyConnection = nil
+bodyVelocity = nil
 
-	flyConnection = nil
-	bodyVelocity = nil
+-- Configuration
+FLY_UP_SPEED = Fly.Values["Fly Speed"] 
+BYPASS_INTERVAL = Fly.Values["Bypass Interval"] 
 
-	-- Configuration
-	FLY_UP_SPEED = Fly.Values["Fly Speed"] 
-	BYPASS_INTERVAL = Fly.Values["Bypass Interval"] 
+lastBypassTime = os.clock()
+isBypassing = false
+
+-- === NEW: Fuel / Timer Configuration ===
+maxFlyTime = 2.5
+currentFlyTime = maxFlyTime
+
+flyGui = nil
+fuelBarFill = nil
+fuelTextLabel = nil
+
+-- Helper to safely get character elements
+function getCharacterData()
+	char = cachedChar
+	if not char then return nil end
+
+	hrp = cachedHRP
+	hum = cachedHumanoid
+
+	if hrp and hum and hum.Health > 0 then
+		return char, hrp, hum
+	end
+	return nil
+end
+
+-- === NEW: UI Functions ===
+function createFlyUI()
+	-- Clean up old UI safely
+	if destroyFlyUI then
+		destroyFlyUI()
+	elseif flyGui then
+		flyGui:Destroy()
+		flyGui = nil
+	end
+
+	local Players = game:GetService("Players")
+
+	local player = Players.LocalPlayer
+	if not player then
+		Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+		player = Players.LocalPlayer
+	end
+
+	flyGui = Instance.new("ScreenGui")
+	flyGui.Name = "FlyTimerGui"
+	flyGui.ResetOnSpawn = false
+	flyGui.IgnoreGuiInset = true
+	flyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	flyGui.DisplayOrder = 999999
+	flyGui.Parent = player:WaitForChild("PlayerGui")
+
+	-- Main background bar (same size and position as yours)
+	local bgBar = Instance.new("Frame")
+	bgBar.Name = "Bar"
+	bgBar.Size = UDim2.new(0, 350, 0, 40)
+	bgBar.Position = UDim2.new(0.5, -175, 1, -150)
+	bgBar.BackgroundColor3 = Color3.fromRGB(8, 9, 12)
+	bgBar.BorderSizePixel = 0
+	bgBar.ZIndex = 1
+	bgBar.Parent = flyGui
+
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 10)
+	bgCorner.Parent = bgBar
+
+	local bgGradient = Instance.new("UIGradient")
+	bgGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(31, 33, 41)),
+		ColorSequenceKeypoint.new(0.55, Color3.fromRGB(14, 15, 20)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(6, 7, 10)),
+	})
+	bgGradient.Rotation = 90
+	bgGradient.Parent = bgBar
+
+	local bgStroke = Instance.new("UIStroke")
+	bgStroke.Color = Color3.fromRGB(92, 98, 118)
+	bgStroke.Thickness = 1
+	bgStroke.Transparency = 0.35
+	bgStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	bgStroke.Parent = bgBar
+
+	-- Subtle top highlight for a glassy/modern look
+	local topHighlight = Instance.new("Frame")
+	topHighlight.Name = "TopHighlight"
+	topHighlight.Size = UDim2.new(1, -2, 0.5, 0)
+	topHighlight.Position = UDim2.new(0, 1, 0, 1)
+	topHighlight.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	topHighlight.BorderSizePixel = 0
+	topHighlight.ZIndex = 2
+	topHighlight.Parent = bgBar
+
+	local topHighlightCorner = Instance.new("UICorner")
+	topHighlightCorner.CornerRadius = UDim.new(0, 9)
+	topHighlightCorner.Parent = topHighlight
+
+	local topHighlightGradient = Instance.new("UIGradient")
+	topHighlightGradient.Color = ColorSequence.new(
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(255, 255, 255)
+	)
+	topHighlightGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.88),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	topHighlightGradient.Rotation = 90
+	topHighlightGradient.Parent = topHighlight
+
+	-- Inner track for the fill bar
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.Size = UDim2.new(1, -6, 1, -6)
+	track.Position = UDim2.new(0, 3, 0, 3)
+	track.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	track.BackgroundTransparency = 0.55
+	track.BorderSizePixel = 0
+	track.ZIndex = 3
+	track.Parent = bgBar
+
+	local trackCorner = Instance.new("UICorner")
+	trackCorner.CornerRadius = UDim.new(0, 7)
+	trackCorner.Parent = track
+
+	local trackStroke = Instance.new("UIStroke")
+	trackStroke.Color = Color3.fromRGB(0, 0, 0)
+	trackStroke.Thickness = 1
+	trackStroke.Transparency = 0.65
+	trackStroke.Parent = track
+
+	-- Fill bar
+	-- This remains global as fuelBarFill so your existing update code still works.
+	fuelBarFill = Instance.new("Frame")
+	fuelBarFill.Name = "Fill"
+	fuelBarFill.Size = UDim2.new(1, 0, 1, 0)
+	fuelBarFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	fuelBarFill.BorderSizePixel = 0
+	fuelBarFill.ZIndex = 4
+	fuelBarFill.Parent = track
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(0, 7)
+	fillCorner.Parent = fuelBarFill
+
+	local fillStroke = Instance.new("UIStroke")
+	fillStroke.Color = Color3.fromRGB(255, 255, 255)
+	fillStroke.Thickness = 1
+	fillStroke.Transparency = 0.55
+	fillStroke.Parent = fuelBarFill
+
+	-- Bottom shading for depth
+	local fillShade = Instance.new("Frame")
+	fillShade.Name = "BottomShade"
+	fillShade.Size = UDim2.new(1, 0, 1, 0)
+	fillShade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	fillShade.BorderSizePixel = 0
+	fillShade.ZIndex = 5
+	fillShade.Parent = fuelBarFill
+
+	local fillShadeCorner = Instance.new("UICorner")
+	fillShadeCorner.CornerRadius = UDim.new(0, 7)
+	fillShadeCorner.Parent = fillShade
+
+	local fillShadeGradient = Instance.new("UIGradient")
+	fillShadeGradient.Color = ColorSequence.new(
+		Color3.fromRGB(0, 0, 0),
+		Color3.fromRGB(0, 0, 0)
+	)
+	fillShadeGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.55, 0.94),
+		NumberSequenceKeypoint.new(1, 0.72),
+	})
+	fillShadeGradient.Rotation = 90
+	fillShadeGradient.Parent = fillShade
+
+	-- Top gloss highlight
+	local fillGloss = Instance.new("Frame")
+	fillGloss.Name = "TopGloss"
+	fillGloss.Size = UDim2.new(1, 0, 0.42, 0)
+	fillGloss.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	fillGloss.BorderSizePixel = 0
+	fillGloss.ZIndex = 6
+	fillGloss.Parent = fuelBarFill
+
+	local fillGlossCorner = Instance.new("UICorner")
+	fillGlossCorner.CornerRadius = UDim.new(0, 7)
+	fillGlossCorner.Parent = fillGloss
+
+	local fillGlossGradient = Instance.new("UIGradient")
+	fillGlossGradient.Color = ColorSequence.new(
+		Color3.fromRGB(255, 255, 255),
+		Color3.fromRGB(255, 255, 255)
+	)
+	fillGlossGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.78),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	fillGlossGradient.Rotation = 90
+	fillGlossGradient.Parent = fillGloss
+
+	-- Small modern HUD label
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "Title"
+	titleLabel.Size = UDim2.new(0, 58, 1, 0)
+	titleLabel.Position = UDim2.new(0, 12, 0, 0)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = "FLY"
+	titleLabel.Font = Enum.Font.MontserratBold
+	titleLabel.TextSize = 12
+	titleLabel.TextColor3 = Color3.fromRGB(167, 173, 192)
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.TextTransparency = 0.08
+	titleLabel.ZIndex = 8
+	titleLabel.Parent = bgBar
+
+	-- Time/fuel text
+	-- This remains global as fuelTextLabel so your existing update code still works.
+	fuelTextLabel = Instance.new("TextLabel")
+	fuelTextLabel.Name = "TimeText"
+	fuelTextLabel.Size = UDim2.new(1, -82, 1, 0)
+	fuelTextLabel.Position = UDim2.new(0, 70, 0, 0)
+	fuelTextLabel.BackgroundTransparency = 1
+	fuelTextLabel.Text = "2.5s"
+	fuelTextLabel.Font = Enum.Font.MontserratBold
+	fuelTextLabel.TextSize = 20
+	fuelTextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	fuelTextLabel.TextXAlignment = Enum.TextXAlignment.Right
+	fuelTextLabel.ZIndex = 9
+	fuelTextLabel.Parent = bgBar
+
+	local textStroke = Instance.new("UIStroke")
+	textStroke.Color = Color3.fromRGB(4, 5, 7)
+	textStroke.Thickness = 2
+	textStroke.Transparency = 0.35
+	textStroke.Parent = fuelTextLabel
+end
+
+function destroyFlyUI()
+	if flyGui then
+		flyGui:Destroy()
+		flyGui = nil
+		fuelBarFill = nil
+		fuelTextLabel = nil
+	end
+end
+
+function startFlying()
+	char, hrp, hum = getCharacterData()
+	if not hrp then return end
+
+	-- Lift the player off the ground slightly to prevent floor friction bugs
+	hrp.CFrame = hrp.CFrame + Vector3.new(0, 0.1, 0)
+	hum:ChangeState(Enum.HumanoidStateType.Freefall)
+
+	bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.Name = "VerticalFlyForce"
+
+	-- Lock Y-axis only
+	bodyVelocity.MaxForce = Vector3.new(0, 9e9, 0) 
+	bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+	bodyVelocity.Parent = hrp
 
 	lastBypassTime = os.clock()
 	isBypassing = false
 
-	-- Helper to safely get character elements
-	function getCharacterData()
-		char = cachedChar
-		if not char then return nil end
+	-- Reset timer to 2.5s and create UI on toggle
+	currentFlyTime = maxFlyTime
+	createFlyUI()
 
-		hrp = cachedHRP
-		hum = cachedHumanoid
+	-- Setup Raycast parameters for the ground check
+	rayParams = RaycastParams.new()
+	rayParams.FilterDescendantsInstances = {char}
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
-		if hrp and hum and hum.Health > 0 then
-			return char, hrp, hum
-		end
-		return nil
-	end
+	-- Connect to frame updates (We grab deltaTime here to make the timer accurate)
+	flyConnection = RunService.Heartbeat:Connect(function(deltaTime)
+		currentChar, currentHrp, currentHum = getCharacterData()
 
-	function startFlying()
-		char, hrp, hum = getCharacterData()
-		if not hrp then return end
-
-		-- Lift the player off the ground slightly to prevent floor friction bugs
-		hrp.CFrame = hrp.CFrame + Vector3.new(0, 0.1, 0)
-		hum:ChangeState(Enum.HumanoidStateType.Freefall)
-
-		bodyVelocity = Instance.new("BodyVelocity")
-		bodyVelocity.Name = "VerticalFlyForce"
-
-		-- TRICK: We only lock the Y-axis (Vertical). 
-		-- This allows Roblox's physics engine to handle WASD walking naturally in the air!
-		bodyVelocity.MaxForce = Vector3.new(0, 9e9, 0) 
-		bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-		bodyVelocity.Parent = hrp
-
-		lastBypassTime = os.clock()
-		isBypassing = false
-
-		-- Setup Raycast parameters for the ground check
-		rayParams = RaycastParams.new()
-		rayParams.FilterDescendantsInstances = {char}
-		rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
-		-- Connect to frame updates
-		flyConnection = RunService.Heartbeat:Connect(function()
-			currentChar, currentHrp, currentHum = getCharacterData()
-
-			-- Auto-clean if player dies or despawns
-			if not currentHrp or not currentHum then
-				stopFlying()
-				return
-			end
-
-			-- Keep bodyVelocity inside the RootPart
-			if bodyVelocity.Parent ~= currentHrp then
-				bodyVelocity.Parent = currentHrp
-			end
-
-			-- 1. Anti-Cheat Drop Bypass (Every 1.5 seconds)
-			if os.clock() - lastBypassTime >= Fly.Values["Bypass Interval"] and not isBypassing then
-
-				-- RAYCAST: Check distance to the ground
-				rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
-				distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
-
-				if distToGround > 4 then
-					isBypassing = true
-					task.spawn(function()
-						-- Initial check just in case
-						if not bodyVelocity then return end
-
-						bodyVelocity.Velocity = Vector3.new(0, -35, 0)
-						task.wait(0.03) -- Fall for 30ms
-
-						if not bodyVelocity then 
-							isBypassing = false
-							return 
-						end
-
-						bodyVelocity.Velocity = Vector3.new(0, 45, 0)
-						task.wait(0.05) -- Pull up for 50ms
-
-						if not bodyVelocity then 
-							isBypassing = false
-							return 
-						end
-
-						-- Resume normal hover
-						bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-						lastBypassTime = os.clock()
-						isBypassing = false
-					end)
-				else
-					lastBypassTime = os.clock()
-				end
-			end
-
-			-- 2. Handle Fly Inputs (Only when not bypassing)
-			if not isBypassing then
-				targetYVelocity = 0
-
-				-- Correctly check if the user is typing in chat/UI
-				isTyping = UserInputService:GetFocusedTextBox() ~= nil
-
-				if not isTyping then
-					if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-						targetYVelocity = Fly.Values["Fly Speed"]
-					end
-					if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-						targetYVelocity = -Fly.Values["Fly Speed"]
-					end
-				end
-
-				bodyVelocity.Velocity = Vector3.new(0, targetYVelocity, 0)
-			end
-		end)
-	end
-
-	function stopFlying()
-		if flyConnection then
-			flyConnection:Disconnect()
-			flyConnection = nil
-		end
-		if bodyVelocity then
-			bodyVelocity:Destroy()
-			bodyVelocity = nil
-		end
-	end
-
-	Fly.Callbacks.OnToggle = function(state)
-		loops["fly"] = state
-
-		if loops["fly"] then
-			startFlying()
-		else
+		-- Auto-clean if player dies or despawns
+		if not currentHrp or not currentHum then
 			stopFlying()
+			return
 		end
+
+		-- Keep bodyVelocity inside the RootPart
+		if bodyVelocity.Parent ~= currentHrp then
+			bodyVelocity.Parent = currentHrp
+		end
+
+		-- RAYCAST: Check distance to the ground
+		rayResult = workspace:Raycast(currentHrp.Position, Vector3.new(0, -15, 0), rayParams)
+		distToGround = rayResult and (currentHrp.Position.Y - rayResult.Position.Y) or 999
+
+		-- === NEW: Handle 2.5s Timer Logic ===
+		if distToGround > 4 then
+			-- We are in the air, drain the timer
+			currentFlyTime = math.max(0, currentFlyTime - deltaTime)
+		else
+			-- We touched land, freeze/refill the timer to 2.5s
+			currentFlyTime = maxFlyTime
+		end
+
+		-- Update the UI visuals
+		if fuelBarFill and fuelTextLabel then
+			-- Make the bar turn red when below 1 second
+			if currentFlyTime > 1.0 then
+				fuelBarFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+			else
+				fuelBarFill.BackgroundColor3 = Color3.fromRGB(74, 74, 74)
+			end
+
+			fuelBarFill.Size = UDim2.new(currentFlyTime / maxFlyTime, 0, 1, 0)
+			fuelTextLabel.Text = string.format("%.1fs", currentFlyTime)
+		end
+
+		-- If Timer reaches 0, force a "restart" by dropping them to the floor
+		if currentFlyTime <= 0 then
+			isBypassing = true
+			bodyVelocity.Velocity = Vector3.new(0, -45, 0)
+			-- Skip the rest of the script so they can't fly up until they touch the ground
+			return
+		end
+
+		-- 1. Anti-Cheat Drop Bypass (Every X seconds)
+		if os.clock() - lastBypassTime >= Fly.Values["Bypass Interval"] and not isBypassing then
+			if distToGround > 4 then
+				isBypassing = true
+				task.spawn(function()
+					if not bodyVelocity then return end
+
+					bodyVelocity.Velocity = Vector3.new(0, -35, 0)
+					task.wait(0.03) -- Fall for 30ms
+
+					if not bodyVelocity then 
+						isBypassing = false
+						return 
+					end
+
+					bodyVelocity.Velocity = Vector3.new(0, 45, 0)
+					task.wait(0.05) -- Pull up for 50ms
+
+					if not bodyVelocity then 
+						isBypassing = false
+						return 
+					end
+
+					-- Resume normal hover
+					bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+					lastBypassTime = os.clock()
+					isBypassing = false
+				end)
+			else
+				lastBypassTime = os.clock()
+			end
+		end
+
+		-- 2. Handle Fly Inputs (Only when not bypassing)
+		if not isBypassing then
+			targetYVelocity = 0
+
+			isTyping = UserInputService:GetFocusedTextBox() ~= nil
+
+			if not isTyping then
+				if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+					targetYVelocity = Fly.Values["Fly Speed"]
+				end
+				if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+					targetYVelocity = -Fly.Values["Fly Speed"]
+				end
+			end
+
+			bodyVelocity.Velocity = Vector3.new(0, targetYVelocity, 0)
+		end
+	end)
+end
+
+function stopFlying()
+	if flyConnection then
+		flyConnection:Disconnect()
+		flyConnection = nil
+	end
+	if bodyVelocity then
+		bodyVelocity:Destroy()
+		bodyVelocity = nil
 	end
 
+	-- Destroy the UI when toggled off
+	destroyFlyUI()
+end
+
+Fly.Callbacks.OnToggle = function(state)
+	loops["fly"] = state
+
+	if loops["fly"] then
+		startFlying()
+	else
+		stopFlying()
+	end
+end
 
 	Player.OnTeleport:Connect(function(teleportState)
 		if teleportState == Enum.TeleportState.InProgress then
@@ -11581,5 +11845,167 @@ AutoClicker.Callbacks.OnToggle = function(state)
 	else
 		if autoClickerThread then task.cancel(autoClickerThread); autoClickerThread = nil end
 		acMobileHold = false
+	end
+end
+
+local Terrain = Workspace.Terrain
+
+isSwimming = fals
+swimLoop = nil
+lastWaterCFrame = nil
+waterSize = Vector3.new(4, 4, 4) 
+
+function toggleAirSwim(state)
+	isSwimming = state
+
+	if isSwimming then
+		swimLoop = RunService.Heartbeat:Connect(function()
+			char = Player.Character
+			if char and char:FindFirstChild("HumanoidRootPart") then
+				hrp = char.HumanoidRootPart
+
+				if lastWaterCFrame then
+					Terrain:FillBlock(lastWaterCFrame, waterSize, Enum.Material.Air)
+				end
+
+				local currentCFrame = hrp.CFrame
+				Terrain:FillBlock(currentCFrame, waterSize, Enum.Material.Water)
+
+				lastWaterCFrame = currentCFrame
+			end
+		end)
+	else
+		if swimLoop then
+			swimLoop:Disconnect()
+			swimLoop = nil
+		end
+
+		if lastWaterCFrame then
+			Terrain:FillBlock(lastWaterCFrame, waterSize, Enum.Material.Air)
+			lastWaterCFrame = nil
+		end
+
+		char = LocalPlayer.Character
+		if char and char:FindFirstChild("Humanoid") then
+			char.Humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+		end
+	end
+end
+
+Swim.Callbacks.OnToggle = function (state)
+	loops["swim"] = state
+	
+	toggleAirSwim(loops["swim"])
+end
+NF_SNAP    = 4  
+NF_MINFALL = 6 
+
+nofall = { on = false, conn = nil }
+nf = { engaged = false, landY = nil }
+
+function nfRayGround(hrp)
+	rp = RaycastParams.new()
+	rp.FilterType = Enum.RaycastFilterType.Exclude
+	if Player.Character then rp.FilterDescendantsInstances = { Player.Character } end
+	hit = workspace:Raycast(hrp.Position, Vector3.new(0, -1000, 0), rp)
+	return hit and hit.Position.Y or nil
+end
+
+function nfTryEngage(hrp, hum)
+	G = nfRayGround(hrp)
+	if not G then return end
+	feetOff = (hrp.Size.Y / 2) + (hum.HipHeight or 2)      
+	landY = G + feetOff
+	if hrp.Position.Y - landY > NF_MINFALL then     
+		nf.engaged = true
+		nf.landY = landY
+		print("[NOFALL] locked landing Y =", math.floor(landY), "| drop =", math.floor(hrp.Position.Y - landY))
+	end
+end
+
+function nofallLoop()
+	if not nofall.on then return end
+	if loops["fly"] or loops["swim"] then return end
+	char = Player.Character
+	hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	hum  = char and char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum or hum.Health <= 0 then nf.engaged = false; nf.landY = nil; return end
+
+	air = (hum.FloorMaterial == Enum.Material.Air)
+	if not air then 
+		nf.engaged = false; nf.landY = nil; return
+	end
+
+	if not nf.engaged then
+		nfTryEngage(hrp, hum)   
+	elseif nf.landY and hrp.Position.Y <= nf.landY + NF_SNAP then
+		nfSnapY = nf.landY
+		hrp.CFrame = CFrame.new(hrp.Position.X, nf.landY, hrp.Position.Z)   
+		pcall(function() hrp.AssemblyLinearVelocity = Vector3.zero end)   
+		nf.engaged = false; nf.landY = nil
+		print("[NOFALL] snapped to Y =", math.floor(nfSnapY))
+	end
+end
+
+NoFall = Combat:CreateButton("No Fall", nil, true)
+NoFall.Callbacks.OnToggle = function(state)
+	loops["nofall"] = state
+	nofall.on = state
+	nf.engaged = false; nf.landY = nil
+	if state then
+		if not nofall.conn then nofall.conn = RunService.Heartbeat:Connect(nofallLoop) end
+	else
+		if nofall.conn then nofall.conn:Disconnect(); nofall.conn = nil end
+	end
+end
+
+-- clean up a previous (flingy) version if this block is re-executed
+pcall(function() if spin and spin.thread then task.cancel(spin.thread) end end)
+pcall(function() if spin and spin.mover  then spin.mover:Destroy()  end end)
+pcall(function() if spin and spin.conn   then spin.conn:Disconnect() end end)
+pcall(function()
+	c = Player.Character
+	if c then for _, d in ipairs(c:GetDescendants()) do if d.Name == "SpinBot_BAV" then d:Destroy() end end end
+end)
+
+SpinBot = Combat:CreateButton("Spin Bot", nil, true)      
+SpinBot:CreateSlider("Speed", 1, 300, 50, nil, 1)
+SpinBot:CreateToggle("Spin X", false, nil)
+SpinBot:CreateToggle("Spin Y", true,  nil)
+SpinBot:CreateToggle("Spin Z", false, nil)
+
+spin = { on = false, conn = nil, origAuto = nil }
+
+function spinStep(dt)
+	if not spin.on then return end
+	dt = math.min(dt or 0.016, 0.05)       
+	char = Player.Character
+	hrp  = char and char:FindFirstChild("HumanoidRootPart")
+	hum  = char and char:FindFirstChildOfClass("Humanoid")
+	if not hrp or not hum then return end
+	if spin.origAuto == nil then spin.origAuto = hum.AutoRotate end
+	hum.AutoRotate = false                
+
+	sp = SpinBot.Values["Speed"] or 50
+	ax = SpinBot.Values["Spin X"] and sp * dt or 0
+	ay = SpinBot.Values["Spin Y"] and sp * dt or 0
+	az = SpinBot.Values["Spin Z"] and sp * dt or 0
+	if ax == 0 and ay == 0 and az == 0 then return end
+
+	hrp.CFrame = CFrame.new(hrp.Position) * (CFrame.Angles(ax, ay, az) * hrp.CFrame.Rotation)
+end
+
+SpinBot.Callbacks.OnToggle = function(state)
+	loops["spin bot"] = state
+	spin.on = state
+	if state then
+		spin.origAuto = nil
+		if not spin.conn then spin.conn = RunService.Heartbeat:Connect(spinStep) end
+	else
+		if spin.conn then spin.conn:Disconnect(); spin.conn = nil end
+		orig = spin.origAuto
+		char = Player.Character; hum = char and char:FindFirstChildOfClass("Humanoid")
+		if hum then hum.AutoRotate = (orig ~= nil) and orig or true end
+		spin.origAuto = nil
 	end
 end
