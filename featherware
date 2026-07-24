@@ -1006,7 +1006,11 @@ end
 		blockPlacer = BlockPlacementController and BlockPlacementController.blockPlace
 		SprintConstants = require(replicatedStorage.TS.sprint:WaitForChild("sprint-constants")).SprintConstants
 		SprintController = KnitClient.Controllers.SprintController
-		origStopSprinting = SprintController.stopSprinting 
+		local origStopSprinting
+
+		pcall(function()
+			origStopSprinting = SprintController.stopSprinting
+		end)
  
 	end
 
