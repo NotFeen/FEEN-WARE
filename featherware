@@ -12033,8 +12033,7 @@ SpinBot.Callbacks.OnToggle = function(state)
 		spin.origAuto = nil
 	end
 end
-
--- ===== requires (globals; timeouts so a wrong path can't hang) =====
+-- ----- requires -----
 paRS = game:GetService("ReplicatedStorage")
 PA_PROJ_META, paGetItemMeta, paNet, paFire, paHit, paItems, paInv, paSetInv = {}, nil, nil, nil, nil, nil, nil, nil
 pcall(function()
@@ -12044,45 +12043,50 @@ pcall(function() paGetItemMeta = require(paRS:WaitForChild("TS",5):WaitForChild(
 pcall(function()
 	paNet = paRS:WaitForChild("rbxts_include",5):WaitForChild("node_modules",5):WaitForChild("@rbxts",5)
 		:WaitForChild("net",5):WaitForChild("out",5):WaitForChild("_NetManaged",5)
-	paSetInv = paNet:WaitForChild("SetInvItem", 5)
-	paFire = paNet:WaitForChild("ProjectileFire",5)
-	paHit  = paNet:WaitForChild("ProjectileHit",5)
+	paFire   = paNet:WaitForChild("ProjectileFire",5)
+	paHit    = paNet:WaitForChild("ProjectileHit",5)
+	paSetInv = paNet:WaitForChild("SetInvItem",5)
 end)
 pcall(function() paItems = paRS:WaitForChild("Items",5) end)
 pcall(function() paInv = paRS:WaitForChild("Inventories",5):FindFirstChild(Players.LocalPlayer.Name) end)
 
--- ===== button + controls =====
+-- ----- button + controls -----
 ProjectileAura = Combat:CreateButton("Projectile Aura", nil, true)
 ProjectileAura:CreateToggle("Target Players", true, nil)
 ProjectileAura:CreateToggle("Target NPCs/Dummies", false, nil)
 ProjectileAura:CreateToggle("Show Projectiles", true, nil)
 ProjectileAura:CreateToggle("Lead Targets", true, nil)
+ProjectileAura:CreateToggle("Wall Check", true, nil)
 ProjectileAura:CreateSlider("Fire Delay", 0.03, 1, 0.15, nil, 0.01)
-
--- ===== state =====
+-- ----- state -----
 PA_CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-PA_VIS, PA_VIS_FOLDER, PA_VIS_CONN = {}, nil, nil
+PA_VIS, PA_VIS_CONN = {}, nil
 PA_LOADOUTS, PA_REBUILT, PA_DIAG = {}, 0, false
 PA_MANAGED, paSavedHand, paLastShot = {}, nil, 0
+PA_RR = 0                                       -- round-robin cursor (which projectile fires next)
+PA_HAND_OFFSET = Vector3.new(0, 2, 0)           -- hand is 2 studs under HRP (from your capture)
+PA_FULL_DRAW   = 5                              -- full-charge draw time (your capture = max power)
+PA_HIT_TAPS    = { -0.08, -0.03, 0, 0.04, 0.09, 0.15 }
+paWallParams = RaycastParams.new()
+paWallParams.FilterType = Enum.RaycastFilterType.Exclude
+paWallParams.IgnoreWater = true
 
 
--- is this inventory item one the aura equips? (so we never mistake it for the player's real item)
-function paIsManaged(inst)
-	return inst ~= nil and PA_MANAGED ~= nil and PA_MANAGED[inst] == true
-end
-
--- hand the player's original item back
-function paRestoreHand()
-	if paSavedHand and paSetInv then
-		pcall(function() paSetInv:InvokeServer({ hand = paSavedHand }) end)
-	end
-end
-
-
+-- ----- helpers -----
 function paGenId()
 	pag_s = {}
 	for pag_i = 1, 8 do pag_s[pag_i] = PA_CHARSET:sub(math.random(1, #PA_CHARSET), math.random(1, #PA_CHARSET)) end
 	return table.concat(pag_s)
+end
+
+function paIsManaged(inst)
+	return inst ~= nil and PA_MANAGED ~= nil and PA_MANAGED[inst] == true
+end
+
+function paRestoreHand()
+	if paSavedHand and paSetInv then
+		pcall(function() paSetInv:InvokeServer({ hand = paSavedHand }) end)
+	end
 end
 
 function paTier(low, base, iron, gold)
@@ -12092,11 +12096,12 @@ function paTier(low, base, iron, gold)
 end
 
 function paResolve(itemType, inst)
+	par_low = itemType:lower()
+	if par_low:find("arrow") then return nil end        -- arrows are AMMO only, never a loadout (fixes ghost arrow shots)
 	par_pm = PA_PROJ_META[itemType]
 	if par_pm and par_pm.combat and par_pm.combat.damage then
 		return { weapon = inst, ammo = itemType, projectile = itemType, damage = par_pm.combat.damage, kind = "throw" }
 	end
-	par_low = itemType:lower()
 	par_proj = nil
 	if par_low:find("headhunter") then par_proj = paTier(par_low, "tactical_headhunter_arrow", "tactical_headhunter_arrow_iron", "tactical_headhunter_arrow_iron")
 	elseif par_low:find("tactical")  then par_proj = paTier(par_low, "tactical_crossbow_arrow", "tactical_crossbow_arrow_iron", "tactical_crossbow_arrow_iron")
@@ -12130,24 +12135,27 @@ end
 function paBuildLoadouts()
 	PA_LOADOUTS = {}
 	if not paInv then return end
-	for _, pab_inst in pairs(paInv:GetChildren()) do
+	for _, pab_inst in pairs(paInv:GetChildren()) do       -- inventory order = the rotation order
 		pab_L = paResolve(pab_inst.Name, pab_inst)
 		if pab_L then
 			pab_ok = (pab_L.kind == "throw") and paAmount(pab_inst.Name) > 0 or (pab_L.kind ~= "throw") and paAmount(pab_L.ammo) > 0
 			if pab_ok then table.insert(PA_LOADOUTS, pab_L) end
 		end
 	end
-	table.sort(PA_LOADOUTS, function(a, b) return a.damage > b.damage end)
-	
 	PA_MANAGED = {}
 	for _, pabm_L in ipairs(PA_LOADOUTS) do PA_MANAGED[pabm_L.weapon] = true end
 end
 
--- closed-form ballistic solve: |velocity| == launchVelocity exactly (the server's invariant)
+-- closed-form ballistic solve: |velocity| == launchVelocity exactly; g=0 -> straight line
 function paSolve(O, T, v, g)
 	pasol_d = T - O
 	pasol_R = math.sqrt(pasol_d.X*pasol_d.X + pasol_d.Z*pasol_d.Z)
 	if v <= 0 then return nil end
+	if g < 0.001 then
+		pasol_dist = pasol_d.Magnitude
+		if pasol_dist < 0.01 then return Vector3.new(0, v, 0), 0 end
+		return pasol_d.Unit * v, pasol_dist / v
+	end
 	if pasol_R < 0.5 then return Vector3.new(0, pasol_d.Y >= 0 and v or -v, 0), math.abs(pasol_d.Y)/v end
 	pasol_v2 = v*v
 	pasol_disc = pasol_v2*pasol_v2 - g*(g*pasol_R*pasol_R + 2*pasol_d.Y*pasol_v2)
@@ -12158,17 +12166,37 @@ function paSolve(O, T, v, g)
 	return pasol_hDir*(v*pasol_cosT) + Vector3.new(0, v*pasol_tanT*pasol_cosT, 0), pasol_R/(v*pasol_cosT)
 end
 
-function paAim(O, hrp, vel, v, g, life)
+-- 4-pass lead: horizontal linear; vertical = target's own gravity arc (0 when grounded)
+function paAim(O, hrp, vel, v, g, life, pTgtG)
 	paa_T = hrp
-	for paa_i = 1, 2 do
+	paa_g = pTgtG or 0
+	paa_vt, paa_t = nil, 0
+	for paa_i = 1, 4 do
 		paa_vt, paa_t = paSolve(O, paa_T, v, g)
 		if not paa_vt or paa_t > (life or 3) then return nil end
-		paa_T = hrp + vel*paa_t
+		paa_T = Vector3.new(
+			hrp.X + vel.X * paa_t,
+			hrp.Y + vel.Y * paa_t - 0.5 * paa_g * paa_t * paa_t,
+			hrp.Z + vel.Z * paa_t)
 	end
 	return paa_vt, paa_t
 end
 
+function paHasLOS(origin, model)
+	palos_char = Players.LocalPlayer.Character
+	palos_tgt = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+	if not palos_tgt then return false end
+	if palos_char then
+		paWallParams.FilterDescendantsInstances = {palos_char, model}
+	else
+		paWallParams.FilterDescendantsInstances = {model}
+	end
+	palos_hit = workspace:Raycast(origin, palos_tgt.Position - origin, paWallParams)
+	return palos_hit == nil
+end
+
 function paConsider(model, h, v)
+	if ProjectileAura.Values["Wall Check"] and not paHasLOS(pap_my, model) then return end   -- behind a wall/floor -> not a candidate
 	pap_d = (pap_my - h.Position).Magnitude
 	if not pap_bd or pap_d < pap_bd then pap_best, pap_bd, pap_bh, pap_bv = model, pap_d, h, v end
 end
@@ -12194,20 +12222,20 @@ function paPickTarget()
 	return pap_best, pap_bh, pap_bv
 end
 
--- clone the Handle out of an Accessory (or the part/model directly) so we can aim it without errors
+-- clone the Handle out of an Accessory (or part/model) -> aimable, no Accessory errors; parented to workspace
 function paSpawnVisual(pProj, pPm, pO, pVel, pG)
 	if #PA_VIS >= 16 then return end
 	pas_modelName = (pPm and pPm.projectileModel) or pProj
 	pas_srcRoot = paItems and paItems:FindFirstChild(pas_modelName)
 	if not pas_srcRoot then return end
 	if pas_srcRoot:IsA("Accessory") then
-		pas_src = pas_srcRoot:FindFirstChild("Handle")        -- the part that actually holds the mesh
+		pas_src = pas_srcRoot:FindFirstChild("Handle")
 	else
 		pas_src = pas_srcRoot
 	end
 	if not pas_src then return end
 	pas_clone = pas_src:Clone()
-	pas_clone.Parent = PA_VIS_FOLDER
+	pas_clone.Parent = workspace                       -- straight into workspace, no folder
 	if pas_clone:IsA("BasePart") then
 		pas_mover = pas_clone; pas_isModel = false
 	elseif pas_clone:IsA("Model") then
@@ -12228,36 +12256,40 @@ function paSpawnVisual(pProj, pPm, pO, pVel, pG)
 	table.insert(PA_VIS, { obj = pas_clone, mover = pas_mover, isModel = pas_isModel, O = pO, V = pVel, g = pG, fr = pas_fr, t0 = tick(), life = (pPm and pPm.lifetimeSec) or 2 })
 end
 
--- the in-flight shot: ids/target carried as PARAMETERS (upvalues) so the delayed hit never goes stale
-function paDoShot(pL, pO, pVel, pT, pTgt, pG, pProj, pPm, pFid, pSid)
-	-- server only accepts the shot if the weapon is in hand -> equip it first
+-- in-flight shot: equip weapon, fire, delayed multi-tap hit; visual ONLY on a successful fire
+function paDoShot(pL, pO, pSpawnO, pVel, pT, pTgt, pG, pProj, pPm, pFid, pSid)
 	pae_char = Players.LocalPlayer.Character
 	pae_hi = pae_char and pae_char:FindFirstChild("HandInvItem")
 	pae_curName = pae_hi and pae_hi.Value and tostring(pae_hi.Value) or nil
 	pae_curInst = pae_curName and paInv and paInv:FindFirstChild(pae_curName) or nil
-	if pae_curInst and not paIsManaged(pae_curInst) then paSavedHand = pae_curInst end   -- remember the player's real item (sword/block/...)
+	if pae_curInst and not paIsManaged(pae_curInst) then paSavedHand = pae_curInst end
 	if pae_curInst ~= pL.weapon and paSetInv then
-		pcall(function() paSetInv:InvokeServer({ hand = pL.weapon }) end)               -- swap to the bow / throwable
+		pcall(function() paSetInv:InvokeServer({ hand = pL.weapon }) end)
 	end
 
+	pae_draw = (pL.kind == "throw") and 0 or PA_FULL_DRAW
 	paf_args = {
 		pL.weapon, pL.ammo, pL.projectile,
-		vector.create(pO.X, pO.Y, pO.Z), vector.create(pO.X, pO.Y, pO.Z),
+		vector.create(pO.X, pO.Y, pO.Z),
+		vector.create(pSpawnO.X, pSpawnO.Y, pSpawnO.Z),
 		vector.create(pVel.X, pVel.Y, pVel.Z),
-		pFid, { shotId = pSid, drawDurationSec = 0 },
+		pFid, { shotId = pSid, drawDurationSec = pae_draw },
 		workspace:GetServerTimeNow(),
 	}
 	paf_ok = pcall(function() paFire:InvokeServer(unpack(paf_args)) end)
 	if paf_ok then
 		paLastShot = tick()
-		task.delay(math.min(math.max(pT, 0), 3), function() pcall(function() paHit:FireServer(pFid, pTgt) end) end)
+		for paf_k = 1, #PA_HIT_TAPS do
+			paf_at = math.max(0, math.min(pT + PA_HIT_TAPS[paf_k], 3))
+			task.delay(paf_at, function() pcall(function() paHit:FireServer(pFid, pTgt) end) end)
+		end
+		if ProjectileAura.Values["Show Projectiles"] then paSpawnVisual(pProj, pPm, pSpawnO, pVel, pG) end   -- visual only when the fire landed
 	end
-	if ProjectileAura.Values["Show Projectiles"] then paSpawnVisual(pProj, pPm, pO, pVel, pG) end
 end
 
-function paFireShot(L, O, vel, t, target, g, projName, pm)
+function paFireShot(L, O, spawnO, vel, t, target, g, projName, pm)
 	paf_fireId, paf_shotId = paGenId(), paGenId()
-	task.spawn(paDoShot, L, O, vel, t, target, g, projName, pm, paf_fireId, paf_shotId)
+	task.spawn(paDoShot, L, O, spawnO, vel, t, target, g, projName, pm, paf_fireId, paf_shotId)
 end
 
 function paVisTick()
@@ -12277,6 +12309,7 @@ function paVisTick()
 	end
 end
 
+-- ----- toggle -----
 ProjectileAura.Callbacks.OnToggle = function(state)
 	loops["projectile aura"] = state
 	if not state then
@@ -12287,14 +12320,15 @@ ProjectileAura.Callbacks.OnToggle = function(state)
 		paSavedHand = nil
 		paLastShot = 0
 		PA_MANAGED = {}
+		PA_RR = 0
 		return
 	end
 
 	startEntityCache()
-	if not PA_VIS_FOLDER then PA_VIS_FOLDER = Instance.new("Folder"); PA_VIS_FOLDER.Name = "PA_Projectiles"; PA_VIS_FOLDER.Parent = workspace end
+	if not PA_VIS_CONN then PA_VIS_CONN = game:GetService("RunService").Heartbeat:Connect(paVisTick) end
 	paSavedHand = nil
 	paLastShot = 0
-	if not PA_VIS_CONN then PA_VIS_CONN = game:GetService("RunService").Heartbeat:Connect(paVisTick) end
+	PA_RR = 0
 
 	if not PA_DIAG then
 		PA_DIAG = true
@@ -12303,12 +12337,13 @@ ProjectileAura.Callbacks.OnToggle = function(state)
 			for _, pad_inst in pairs(paInv:GetChildren()) do
 				pad_n = pad_n + 1; if pad_n > 40 then break end
 				pad_L = paResolve(pad_inst.Name, pad_inst)
-				table.insert(pad_lines, pad_inst.Name .. "=" .. (pad_L and (pad_L.kind .. ":" .. pad_L.projectile) or "UNRESOLVED"))
+				pad_tag = pad_L and (pad_L.kind .. ":" .. pad_L.projectile) or (pad_inst.Name:lower():find("arrow") and "ammo(skip)" or "UNRESOLVED")
+				table.insert(pad_lines, pad_inst.Name .. "=" .. pad_tag)
 			end
 		end
 		print("[PA] meta=" .. tostring(next(PA_PROJ_META) ~= nil) .. " fire=" .. tostring(paFire ~= nil)
-			.. " hit=" .. tostring(paHit ~= nil) .. " items=" .. tostring(paItems ~= nil)
-			.. " | inventory: " .. table.concat(pad_lines, ", "))
+			.. " hit=" .. tostring(paHit ~= nil) .. " setinv=" .. tostring(paSetInv ~= nil)
+			.. " items=" .. tostring(paItems ~= nil) .. " | inventory: " .. table.concat(pad_lines, ", "))
 	end
 
 	task.spawn(function()
@@ -12319,19 +12354,39 @@ ProjectileAura.Callbacks.OnToggle = function(state)
 			else
 				if tick() - PA_REBUILT > 0.25 then PA_REBUILT = tick(); paBuildLoadouts() end
 				pa_target, pa_hrp, pa_vel = paPickTarget()
-				if pa_target and #PA_LOADOUTS > 0 then
+				pa_n = #PA_LOADOUTS
+				if pa_target and pa_hrp and pa_n > 0 then
 					pa_char = Players.LocalPlayer.Character
 					pa_my = pa_char and pa_char:FindFirstChild("HumanoidRootPart")
 					if pa_my then
 						pa_O = pa_my.Position
-						pa_lead = ProjectileAura.Values["Lead Targets"] and pa_vel or Vector3.zero
-						for _, pa_L in ipairs(PA_LOADOUTS) do
+						-- lead: horizontal always; vertical curved-by-gravity when airborne/falling; capped vs knockback spikes
+						pa_hum2 = pa_target:FindFirstChildOfClass("Humanoid")
+						pa_air2 = (pa_hum2 and pa_hum2.FloorMaterial == Enum.Material.Air) or math.abs(pa_vel.Y) > 2
+						if ProjectileAura.Values["Lead Targets"] then
+							pa_leadY = pa_air2 and pa_vel.Y or 0
+							pa_tgtG  = pa_air2 and (workspace.Gravity or 196.2) or 0
+							pa_lead  = Vector3.new(pa_vel.X, pa_leadY, pa_vel.Z)
+							if pa_lead.Magnitude > 200 then pa_lead = pa_lead.Unit * 200 end
+						else
+							pa_lead = Vector3.zero; pa_tgtG = 0
+						end
+						-- round-robin: start at the cursor, fire the first reachable+loaded one, advance the cursor
+						pa_start = PA_RR % pa_n
+						for pa_off = 0, pa_n - 1 do
+							pa_idx = (pa_start + pa_off) % pa_n + 1
+							pa_L = PA_LOADOUTS[pa_idx]
 							pa_still = (pa_L.kind == "throw") and paAmount(pa_L.weapon.Name) > 0 or paAmount(pa_L.ammo) > 0
 							if pa_still then
 								pa_pm = PA_PROJ_META[pa_L.projectile]
 								if pa_pm then
-									pa_vt, pa_t = paAim(pa_O, pa_hrp.Position, pa_lead, pa_pm.launchVelocity, pa_pm.gravitationalAcceleration or 0, pa_pm.lifetimeSec or 3)
-									if pa_vt then paFireShot(pa_L, pa_O, pa_vt, pa_t, pa_target, pa_pm.gravitationalAcceleration or 0, pa_L.projectile, pa_pm); break end
+									pa_spawnO = pa_O - PA_HAND_OFFSET
+									pa_vt, pa_t = paAim(pa_spawnO, pa_hrp.Position, pa_lead, pa_pm.launchVelocity, pa_pm.gravitationalAcceleration or 0, pa_pm.lifetimeSec or 3, pa_tgtG)
+									if pa_vt then
+										paFireShot(pa_L, pa_O, pa_spawnO, pa_vt, pa_t, pa_target, pa_pm.gravitationalAcceleration or 0, pa_L.projectile, pa_pm)
+										PA_RR = pa_idx % pa_n
+										break
+									end
 								end
 							end
 						end
