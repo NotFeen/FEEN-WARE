@@ -1004,7 +1004,7 @@ end
 		originalGetMouseInfo = BlockSelector.getMouseInfo
 		BlockPlacementController = KnitClient.Controllers.BlockPlacementController
 		blockPlacer = BlockPlacementController and BlockPlacementController.blockPlace
-		SprintConstants = require(replicatedStorage.TS.sprint["sprint-constants"]).SprintConstants
+		SprintConstants = require(replicatedStorage.TS.sprint:WaitForChild("sprint-constants")).SprintConstants
 		SprintController = KnitClient.Controllers.SprintController
 		origStopSprinting = SprintController.stopSprinting 
  
